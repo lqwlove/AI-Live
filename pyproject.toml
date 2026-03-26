@@ -1,0 +1,27 @@
+[project]
+name = "tk-live"
+version = "0.2.0"
+description = "直播 AI 语音助手（支持抖音 + TikTok + YouTube）"
+requires-python = ">=3.12"
+dependencies = [
+    "requests>=2.31.0",
+    "betterproto==2.0.0b7",
+    "websocket-client>=1.7.0",
+    "tiktoklive>=6.6.0",
+    "edge-tts>=6.1.0",
+    "pygame>=2.5.0",
+    "openai>=1.0.0",
+    "pyyaml>=6.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.1.0",
+    "google-auth>=2.23.0",
+    "grpcio>=1.60.0",
+    "protobuf>=4.25.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.scripts]
+tk-live = "main:main"
+tk-live-web = "server:main"

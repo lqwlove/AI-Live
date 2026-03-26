@@ -1,0 +1,149 @@
+import os
+import yaml
+
+DEFAULT_CONFIG = {
+    "douyin": {
+        "live_url": "",
+        "room_id": "",
+        "cookie": "",
+    },
+
+    "tiktok": {
+        "unique_id": "",
+        "proxy": "",
+    },
+
+    "youtube": {
+        "video_id": "",
+        "channel_id": "",
+        "api_key": "",
+        "client_secrets_file": "",
+        "auto_reply": False,
+        "reply_prefix": "",
+    },
+
+    "ai": {
+        "api_key": "",
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "system_prompt": (
+            "你是一个直播间的AI助手。"
+            "你需要用简短、友好、有趣的方式回答观众的问题。"
+            "回答控制在50字以内，适合语音播报。"
+            "不要使用markdown格式、表情符号或特殊符号。"
+        ),
+        "max_history": 10,
+        "multilang": False,
+    },
+
+    "tts": {
+        "engine": "edge-tts",
+        "voice": "zh-CN-XiaoxiaoNeural",
+        "rate": "+0%",
+        "volume": "+0%",
+        "output_dir": "audio_cache",
+    },
+
+    "volcengine": {
+        "api_key": "",
+        "app_id": "",
+        "access_token": "",
+        "speaker_id": "",
+        "resource_id": "seed-icl-2.0",
+    },
+
+    "filter": {
+        "keywords": ["怎么", "什么", "吗", "如何", "为什么", "多少", "哪", "谁", "?", "？",
+                      "how", "what", "why", "when", "where", "who", "?"],
+        "min_length": 2,
+        "max_length": 200,
+        "cooldown_seconds": 3,
+    },
+
+    "audio": {
+        "device": "default",
+    },
+}
+
+
+import copy
+import re
+
+_SENSITIVE_KEYS = re.compile(r"(api_key|access_token|cookie|secret)", re.I)
+
+
+class Config:
+    def __init__(self, config_path="config.yaml"):
+        self._path = config_path
+        self._data = copy.deepcopy(DEFAULT_CONFIG)
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                user_config = yaml.safe_load(f) or {}
+            self._deep_merge(self._data, user_config)
+
+    def _deep_merge(self, base, override, *, skip_masked_secrets: bool = False):
+        for key, value in override.items():
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                self._deep_merge(base[key], value, skip_masked_secrets=skip_masked_secrets)
+            elif skip_masked_secrets and isinstance(value, str) and _SENSITIVE_KEYS.search(key) and self._is_masked_secret_placeholder(value):
+                # 前端 GET 返回脱敏串，保存时勿覆盖真实密钥
+                continue
+            else:
+                base[key] = value
+
+    @staticmethod
+    def _is_masked_secret_placeholder(value: str) -> bool:
+        """与 get_sanitized 规则一致：前 4 字符 + 其余全为 *。"""
+        if len(value) <= 4:
+            return False
+        suffix = value[4:]
+        return bool(suffix) and all(c == "*" for c in suffix)
+
+    def get(self, *keys):
+        result = self._data
+        for key in keys:
+            result = result[key]
+        return result
+
+    def get_all(self) -> dict:
+        return copy.deepcopy(self._data)
+
+    def get_sanitized(self) -> dict:
+        """Return config with sensitive values masked."""
+        return self._mask(copy.deepcopy(self._data))
+
+    def _mask(self, obj, _key=""):
+        if isinstance(obj, dict):
+            return {k: self._mask(v, k) for k, v in obj.items()}
+        if isinstance(obj, str) and _SENSITIVE_KEYS.search(_key) and len(obj) > 4:
+            return obj[:4] + "*" * (len(obj) - 4)
+        return obj
+
+    def update(self, data: dict):
+        """Merge *data* into current config and persist to disk."""
+        self._deep_merge(self._data, data, skip_masked_secrets=True)
+        self.save(self._path)
+
+    def save(self, path: str | None = None):
+        path = path or self._path
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(self._data, f, allow_unicode=True, default_flow_style=False)
+
+    def save_template(self, path="config.yaml"):
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(self._data, f, allow_unicode=True, default_flow_style=False)
+        print(f"配置模板已保存到 {path}")
+
+    def validate_platform(self, platform: str) -> dict:
+        """Check if a platform has the minimum required configuration."""
+        if platform == "youtube":
+            yt = self.get("youtube")
+            has_id = bool(yt.get("video_id") or yt.get("channel_id"))
+            has_auth = bool(yt.get("api_key") or yt.get("client_secrets_file"))
+            return {"configured": has_id and has_auth, "platform": platform}
+        if platform == "tiktok":
+            return {"configured": bool(self.get("tiktok", "unique_id")), "platform": platform}
+        if platform == "douyin":
+            dy = self.get("douyin")
+            return {"configured": bool(dy.get("room_id") or dy.get("live_url")), "platform": platform}
+        return {"configured": False, "platform": platform}

@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+audio_cache/
+youtube_token.json
+client_secret.json
+config.yaml
+proto/*_pb2.py
+.env
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+node_modules/
+.DS_Store
