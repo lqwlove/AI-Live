@@ -28,8 +28,7 @@ export function ChatPanel() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-[var(--border-app)] bg-[var(--bg-card)]">
       <div
-        className="box-border flex shrink-0 items-center px-5"
-        style={{ height: "var(--ds-panel-head-h)", gap: "var(--ds-micro-gap)" }}
+        className="box-border flex shrink-0 items-center gap-2 px-5 py-4"
       >
         <MessageSquare className="size-4 shrink-0 text-[var(--font-primary)]" strokeWidth={2} />
         <span className="text-sm font-semibold text-[var(--font-primary)]">Live Chat Stream</span>
@@ -43,8 +42,8 @@ export function ChatPanel() {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div
-          className="flex flex-col px-5"
-          style={{ gap: "var(--ds-msg-gap)", paddingBottom: "var(--ds-row-gap)" }}
+          className="flex flex-col px-5 pb-4"
+          style={{ gap: "var(--ds-msg-gap)" }}
         >
           {messages.map((msg, i) => (
             <div key={`${msg.timestamp}-${i}`} className="flex" style={{ gap: "10px" }}>

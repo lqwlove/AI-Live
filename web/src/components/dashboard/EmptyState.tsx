@@ -11,30 +11,37 @@ export function EmptyState() {
   return (
     <>
       <div
-        className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-[var(--border-app)] bg-[var(--bg-card)] px-6 py-10"
+        className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center rounded-[12px] border border-[var(--border-app)] bg-[var(--bg-card)]"
         style={{ gap: "var(--ds-empty-stack)" }}
       >
-        <CirclePlay className="size-14 text-[var(--font-muted)]" strokeWidth={1.25} />
-        <h2 className="text-xl font-bold text-[var(--font-primary)]">No Active Session</h2>
-        <p className="max-w-[400px] text-center text-sm text-[var(--font-muted)]">
+        <CirclePlay className="size-14 shrink-0 text-[var(--font-muted)]" strokeWidth={1.25} />
+        <h2 className="text-[20px] font-bold leading-tight text-[var(--font-primary)]">
+          No Active Session
+        </h2>
+        <p className="max-w-[400px] text-center text-sm leading-normal text-[var(--font-muted)]">
           Configure your platform settings and start the live assistant to begin monitoring chat.
         </p>
-        <div className="flex gap-3 pt-2">
+        <div
+          className="flex flex-wrap items-center justify-center"
+          style={{ gap: "var(--ds-tight-gap)", paddingTop: "var(--ds-empty-btn-row-pt)" }}
+        >
           <Button
             type="button"
             variant="outline"
+            size="cta"
             onClick={() => navigate("/settings")}
-            className="h-auto gap-2 rounded-lg border-[var(--border-app)] bg-transparent px-5 py-2.5 text-sm font-medium text-[var(--font-secondary)] hover:bg-[var(--bg-card-hover)]"
+            className="rounded-[8px] border-[var(--border-app)] bg-transparent text-sm font-medium leading-normal text-[var(--font-secondary)] hover:bg-[var(--bg-card-hover)]"
           >
-            <Settings className="size-4" />
+            <Settings className="size-4 shrink-0" />
             Go to Settings
           </Button>
           <Button
             type="button"
+            size="cta"
             onClick={() => setModalOpen(true)}
-            className="h-auto gap-2 rounded-lg border-0 bg-gradient-to-b from-[var(--accent-purple)] to-[var(--accent-blue)] px-5 py-2.5 text-sm font-semibold text-white shadow-none hover:opacity-90"
+            className="rounded-[8px] border-0 bg-gradient-to-b from-[var(--accent-purple)] to-[var(--accent-blue)] text-sm font-semibold leading-normal text-white shadow-none hover:opacity-90"
           >
-            <Play className="size-4" />
+            <Play className="size-4 shrink-0" />
             Start Live Assistant
           </Button>
         </div>

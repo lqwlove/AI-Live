@@ -120,7 +120,8 @@ export function Sidebar() {
         {status === "running" ? (
           <Button
             variant="destructive"
-            className="h-auto w-full gap-2 rounded-lg border border-[var(--error)] bg-transparent py-2.5 text-[13px] font-semibold text-[var(--error)] hover:bg-[var(--error)]/10"
+            size="cta"
+            className="w-full rounded-lg border border-[var(--error)] bg-transparent text-[13px] font-semibold text-[var(--error)] hover:bg-[var(--error)]/10"
             onClick={async () => {
               useSessionStore.getState().setStatus("stopping");
               await api.stopSession().catch(() => {});
@@ -132,8 +133,9 @@ export function Sidebar() {
         ) : (
           <Button
             type="button"
+            size="cta"
             onClick={() => setModalOpen(true)}
-            className="h-auto w-full gap-2 rounded-lg border-0 bg-gradient-to-b from-[var(--accent-purple)] to-[var(--accent-blue)] py-2.5 px-4 text-[13px] font-semibold text-white shadow-none hover:opacity-90"
+            className="w-full rounded-lg border-0 bg-gradient-to-b from-[var(--accent-purple)] to-[var(--accent-blue)] text-[13px] font-semibold leading-normal text-white shadow-none hover:opacity-90"
           >
             <Play className="size-4" />
             Start Live Assistant

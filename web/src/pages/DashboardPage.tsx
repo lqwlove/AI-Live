@@ -17,15 +17,15 @@ export function DashboardPage() {
 
   return (
     <div className="tk-main-canvas">
-      <header className="flex shrink-0 items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
+      <header className="flex min-h-[var(--ds-topbar-h)] shrink-0 items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center" style={{ gap: "var(--ds-tight-gap)" }}>
           <h1 className="text-2xl leading-none font-bold tracking-tight text-[var(--font-primary)]">
             Dashboard
           </h1>
           {isRunning ? (
             <div
-              className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1"
-              style={{ background: "#16A34A22" }}
+              className="inline-flex items-center rounded-xl py-1 pr-2.5 pl-2.5"
+              style={{ background: "#16A34A22", gap: "6px" }}
             >
               <span className="size-2 shrink-0 rounded-full bg-[var(--success)]" />
               <span className="text-xs leading-none font-semibold text-[var(--success)]">
@@ -34,8 +34,8 @@ export function DashboardPage() {
             </div>
           ) : (
             <div
-              className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1"
-              style={{ background: "#71717A22" }}
+              className="inline-flex items-center rounded-xl py-1 pr-2.5 pl-2.5"
+              style={{ background: "#71717A22", gap: "6px" }}
             >
               <span className="size-2 shrink-0 rounded-full bg-[var(--font-muted)]" />
               <span className="text-xs leading-none font-semibold text-[var(--font-muted)]">Offline</span>
@@ -45,7 +45,7 @@ export function DashboardPage() {
       </header>
 
       {isRunning ? (
-        <div className="flex min-h-0 flex-1 gap-4">
+        <div className="flex min-h-0 min-w-0 flex-1" style={{ gap: "var(--ds-row-gap)" }}>
           <ChatPanel />
           <AIResponsePanel />
         </div>

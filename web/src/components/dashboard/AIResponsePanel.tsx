@@ -71,13 +71,16 @@ export function AIResponsePanel() {
         </span>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-4">
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-4"
+        style={{ gap: "var(--ds-ai-card-gap)" }}
+      >
         {responses.map((resp, i) => {
           const cfg = STATUS_CONFIG[resp.status] ?? STATUS_CONFIG.done;
           return (
             <div
               key={`${resp.timestamp}-${i}`}
-              className="flex flex-col gap-2.5 rounded-lg border border-[var(--border-app)] bg-[var(--input-bg)] p-4"
+              className="flex flex-col gap-2.5 rounded-[8px] border border-[var(--border-app)] bg-[var(--input-bg)] p-4"
             >
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5">
