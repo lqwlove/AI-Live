@@ -1,5 +1,8 @@
 syntax = "proto2";
 
+// Regenerate proto/stream_list_pb2.py (after editing this file):
+//   uv sync --group dev && uv run python -m grpc_tools.protoc -I. --python_out=. proto/stream_list.proto
+
 package youtube.api.v3;
 
 service V3DataLiveChatMessageService {

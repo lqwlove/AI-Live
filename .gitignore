@@ -6,7 +6,7 @@ youtube_token.json
 client_secret.json
 config.yaml
 products.json
-proto/*_pb2.py
+# stream_list_pb2.py 已纳入仓库，避免新环境缺少 YouTube gRPC 桩代码
 .env
 *.egg-info/
 dist/

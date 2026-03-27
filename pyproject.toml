@@ -15,7 +15,7 @@ dependencies = [
     "google-api-python-client>=2.100.0",
     "google-auth-oauthlib>=1.1.0",
     "google-auth>=2.23.0",
-    "grpcio>=1.60.0",
+    "grpcio>=1.78.0",
     "protobuf>=4.25.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
@@ -27,3 +27,6 @@ dependencies = [
 [project.scripts]
 tk-live = "main:main"
 tk-live-web = "server:main"
+
+[dependency-groups]
+dev = ["grpcio-tools>=1.78.0"]
