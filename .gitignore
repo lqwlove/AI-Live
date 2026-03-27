@@ -5,6 +5,7 @@ audio_cache/
 youtube_token.json
 client_secret.json
 config.yaml
+products.json
 proto/*_pb2.py
 .env
 *.egg-info/

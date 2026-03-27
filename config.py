@@ -7,12 +7,10 @@ DEFAULT_CONFIG = {
         "room_id": "",
         "cookie": "",
     },
-
     "tiktok": {
         "unique_id": "",
         "proxy": "",
     },
-
     "youtube": {
         "video_id": "",
         "channel_id": "",
@@ -21,21 +19,30 @@ DEFAULT_CONFIG = {
         "auto_reply": False,
         "reply_prefix": "",
     },
-
     "ai": {
         "api_key": "",
         "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
+        "engine": "agent",
         "system_prompt": (
-            "你是一个直播间的AI助手。"
-            "你需要用简短、友好、有趣的方式回答观众的问题。"
-            "回答控制在50字以内，适合语音播报。"
-            "不要使用markdown格式、表情符号或特殊符号。"
+            "你是一个直播间的AI卖货助手。"
+            "你会收到最近一批观众评论，请：\n"
+            "1. 从中挑选最有价值、最需要回答的问题（忽略无意义的刷屏）\n"
+            "2. 用简短、友好、有趣的方式统一回答\n"
+            "3. 回答控制在100字以内，适合语音播报\n"
+            "4. 可以点名回复重要问题的观众\n"
+            "5. 如果需要查询商品信息，使用 product_search 工具\n"
+            "6. 不要使用markdown格式、表情符号或特殊符号"
         ),
         "max_history": 10,
         "multilang": False,
+        "batch_interval": 5,
     },
-
+    "knowledge": {
+        "enabled": True,
+        "products_file": "products.json",
+        "max_match_products": 3,
+    },
     "tts": {
         "engine": "edge-tts",
         "voice": "zh-CN-XiaoxiaoNeural",
@@ -43,7 +50,6 @@ DEFAULT_CONFIG = {
         "volume": "+0%",
         "output_dir": "audio_cache",
     },
-
     "volcengine": {
         "api_key": "",
         "app_id": "",
@@ -51,15 +57,30 @@ DEFAULT_CONFIG = {
         "speaker_id": "",
         "resource_id": "seed-icl-2.0",
     },
-
     "filter": {
-        "keywords": ["怎么", "什么", "吗", "如何", "为什么", "多少", "哪", "谁", "?", "？",
-                      "how", "what", "why", "when", "where", "who", "?"],
+        "keywords": [
+            "怎么",
+            "什么",
+            "吗",
+            "如何",
+            "为什么",
+            "多少",
+            "哪",
+            "谁",
+            "?",
+            "？",
+            "how",
+            "what",
+            "why",
+            "when",
+            "where",
+            "who",
+            "?",
+        ],
         "min_length": 2,
         "max_length": 200,
         "cooldown_seconds": 3,
     },
-
     "audio": {
         "device": "default",
     },
@@ -84,8 +105,15 @@ class Config:
     def _deep_merge(self, base, override, *, skip_masked_secrets: bool = False):
         for key, value in override.items():
             if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-                self._deep_merge(base[key], value, skip_masked_secrets=skip_masked_secrets)
-            elif skip_masked_secrets and isinstance(value, str) and _SENSITIVE_KEYS.search(key) and self._is_masked_secret_placeholder(value):
+                self._deep_merge(
+                    base[key], value, skip_masked_secrets=skip_masked_secrets
+                )
+            elif (
+                skip_masked_secrets
+                and isinstance(value, str)
+                and _SENSITIVE_KEYS.search(key)
+                and self._is_masked_secret_placeholder(value)
+            ):
                 # 前端 GET 返回脱敏串，保存时勿覆盖真实密钥
                 continue
             else:
@@ -142,8 +170,14 @@ class Config:
             has_auth = bool(yt.get("api_key") or yt.get("client_secrets_file"))
             return {"configured": has_id and has_auth, "platform": platform}
         if platform == "tiktok":
-            return {"configured": bool(self.get("tiktok", "unique_id")), "platform": platform}
+            return {
+                "configured": bool(self.get("tiktok", "unique_id")),
+                "platform": platform,
+            }
         if platform == "douyin":
             dy = self.get("douyin")
-            return {"configured": bool(dy.get("room_id") or dy.get("live_url")), "platform": platform}
+            return {
+                "configured": bool(dy.get("room_id") or dy.get("live_url")),
+                "platform": platform,
+            }
         return {"configured": False, "platform": platform}

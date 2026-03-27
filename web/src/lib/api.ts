@@ -12,6 +12,17 @@ async function request<T>(url: string, opts?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export interface Product {
+  id: string;
+  name: string;
+  price: number;
+  original_price?: number | null;
+  keywords: string[];
+  description: string;
+  selling_points: string[];
+  active: boolean;
+}
+
 export const api = {
   getConfig: () => request<Record<string, unknown>>("/api/config"),
 
@@ -37,4 +48,27 @@ export const api = {
     request<Record<string, unknown>>("/api/session/stop", { method: "POST" }),
 
   getStatus: () => request<Record<string, unknown>>("/api/session/status"),
+
+  getProducts: () => request<Product[]>("/api/products"),
+
+  addProduct: (data: Omit<Product, "id">) =>
+    request<Product>("/api/products", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateProduct: (id: string, data: Partial<Product>) =>
+    request<Product>(`/api/products/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteProduct: (id: string) =>
+    request<{ ok: boolean }>(`/api/products/${id}`, { method: "DELETE" }),
+
+  testMatch: (text: string) =>
+    request<{ matched: Product[]; count: number }>("/api/products/test-match", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
 };

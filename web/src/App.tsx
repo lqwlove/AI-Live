@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { ProductsPage } from "@/pages/ProductsPage";
 import { useWebSocket } from "@/hooks/useWebSocket";
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/messages" element={<DashboardPage />} />
+          <Route path="/products" element={<ProductsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>

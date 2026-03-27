@@ -1,9 +1,9 @@
 """
 直播 AI 语音助手（支持抖音 + TikTok + YouTube）
-- 实时监听直播间弹幕
-- AI 自动生成回复
+- 定时批量收集弹幕，AI 挑重点统一回复
 - TTS 语音合成并播放
 - YouTube 直播间自动回复消息
+- 支持 LangChain Agent + 商品知识库
 
 用法:
   python main.py --mock                              # 模拟模式
@@ -25,10 +25,9 @@ os.environ.setdefault("GRPC_ENABLE_FORK_SUPPORT", "0")
 
 from config import Config
 from danmaku.client import DouyinDanmakuClient, MockDanmakuClient
-from ai.replier import AIReplier
 from tts.speaker import TTSSpeaker
 from utils.audio_player import AudioPlayer
-from utils.message_queue import ChatTask, MessageFilter, TaskQueue
+from utils.message_queue import ChatTask, CommentBuffer, MessageFilter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,7 +40,7 @@ logger = logging.getLogger("main")
 
 
 class LiveAssistant:
-    """直播 AI 助手主控制器（支持抖音 / TikTok / YouTube / 模拟模式）"""
+    """直播 AI 助手主控制器（批量回复模式）"""
 
     def __init__(
         self,
@@ -58,6 +57,7 @@ class LiveAssistant:
         self.mock_mode = mock_mode
         self.platform = platform
         self._auto_reply_chat = False
+        self._reply_prefix = ""
 
         if mock_mode:
             self.danmaku = MockDanmakuClient(interval=5.0)
@@ -105,15 +105,45 @@ class LiveAssistant:
             cookie = config.get("douyin", "cookie")
             self.danmaku = DouyinDanmakuClient(url_or_id, cookie=cookie)
 
+        # --- Knowledge base ---
+        self.product_store = None
+        knowledge_cfg = config.get("knowledge")
+        if knowledge_cfg.get("enabled"):
+            from knowledge.product_store import ProductStore
+
+            self.product_store = ProductStore(
+                file_path=knowledge_cfg.get("products_file", "products.json"),
+                max_match=knowledge_cfg.get("max_match_products", 3),
+            )
+
+        # --- AI (agent or simple) ---
         ai_cfg = config.get("ai")
-        self.ai = AIReplier(
-            api_key=ai_cfg["api_key"],
-            base_url=ai_cfg["base_url"],
-            model=ai_cfg["model"],
-            system_prompt=ai_cfg["system_prompt"],
-            max_history=ai_cfg["max_history"],
-            multilang=ai_cfg.get("multilang", False),
-        )
+        engine_type = ai_cfg.get("engine", "agent")
+        if engine_type == "agent":
+            from ai.agent import LiveAgent
+
+            self.ai = LiveAgent(
+                api_key=ai_cfg["api_key"],
+                base_url=ai_cfg["base_url"],
+                model=ai_cfg["model"],
+                system_prompt=ai_cfg["system_prompt"],
+                max_history=ai_cfg["max_history"],
+                multilang=ai_cfg.get("multilang", False),
+                product_store=self.product_store,
+            )
+        else:
+            from ai.replier import AIReplier
+
+            self.ai = AIReplier(
+                api_key=ai_cfg["api_key"],
+                base_url=ai_cfg["base_url"],
+                model=ai_cfg["model"],
+                system_prompt=ai_cfg["system_prompt"],
+                max_history=ai_cfg["max_history"],
+                multilang=ai_cfg.get("multilang", False),
+            )
+
+        self._batch_interval = float(ai_cfg.get("batch_interval", 5))
 
         tts_cfg = config.get("tts")
         tts_engine = tts_cfg.get("engine", "edge-tts")
@@ -149,7 +179,7 @@ class LiveAssistant:
             cooldown=filter_cfg["cooldown_seconds"],
         )
 
-        self.task_queue = TaskQueue(max_size=50)
+        self.comment_buffer = CommentBuffer(max_size=100)
         self.executor = ThreadPoolExecutor(max_workers=2)
         self._running = False
         self._loop = None
@@ -167,11 +197,12 @@ class LiveAssistant:
         logger.info(f"💬 [{user}]: {content}")
 
         if self.msg_filter.should_reply(user_id, content):
-            task = ChatTask(user=user, content=content)
-            if self._loop and self._loop.is_running():
-                self._loop.call_soon_threadsafe(
-                    self._loop.create_task, self.task_queue.put(task)
-                )
+            logger.info(
+                f"✅ [{user}]: {content} → 加入缓冲区 (buffer={self.comment_buffer.size + 1})"
+            )
+            self.comment_buffer.append(ChatTask(user=user, content=content))
+        else:
+            logger.info(f"⏭️ 跳过 [{user}]: {content}（未匹配触发词）")
 
     def _on_like(self, data: dict):
         user = data.get("user", "未知用户")
@@ -217,55 +248,52 @@ class LiveAssistant:
         room_id = data.get("room_id", "")
         logger.info(f"已连接到直播间: {room_id}")
 
-    async def _process_tasks(self):
-        """后台任务：从队列取出弹幕 → AI回复 → 发送到直播间 → TTS合成 → 播放"""
+    async def _batch_loop(self):
+        """Timer loop: drain buffer every batch_interval seconds."""
         while self._running:
-            try:
-                task = await asyncio.wait_for(self.task_queue.get(), timeout=1.0)
-            except asyncio.TimeoutError:
+            await asyncio.sleep(self._batch_interval)
+            comments = self.comment_buffer.drain()
+            if not comments:
                 continue
 
-            try:
-                logger.info(f"正在为 [{task.user}] 生成回复...")
+            batch = [{"user": t.user, "content": t.content} for t in comments]
+            logger.info(f"🔄 收集到 {len(batch)} 条增量评论，开始批量处理")
 
+            try:
                 loop = asyncio.get_event_loop()
                 lang, reply = await loop.run_in_executor(
-                    self.executor,
-                    self.ai.reply,
-                    task.user,
-                    task.content,
+                    self.executor, self.ai.batch_reply, batch
                 )
                 if not reply:
                     continue
-                task.reply_text = reply
+
+                logger.info(f"🤖 [{lang}] {reply}")
 
                 if self._auto_reply_chat and hasattr(self.danmaku, "send_message"):
-                    chat_reply = f"{self._reply_prefix}@{task.user} {reply}"
                     await loop.run_in_executor(
-                        self.executor, self.danmaku.send_message, chat_reply
+                        self.executor,
+                        self.danmaku.send_message,
+                        f"{self._reply_prefix}{reply}",
                     )
 
-                if lang == "en":
-                    speak_text = f"{task.user} asked: {task.content}. {reply}"
-                else:
-                    speak_text = f"{task.user}问：{task.content}。{reply}"
-
+                speak_text = reply
                 if self._tts_engine == "volcengine":
                     audio_path = await self.tts.synthesize(speak_text, lang=lang)
                     if not audio_path:
                         logger.warning("火山 TTS 失败，降级到 edge-tts")
-                        audio_path = await self._edge_tts_fallback.synthesize(speak_text)
+                        audio_path = await self._edge_tts_fallback.synthesize(
+                            speak_text
+                        )
                 else:
                     audio_path = await self.tts.synthesize(speak_text)
                 if not audio_path:
                     continue
-                task.audio_path = audio_path
 
-                logger.info(f"🔊 播放回复 [{lang}]: {reply}")
+                logger.info(f"🔊 播放回复")
                 await loop.run_in_executor(self.executor, self.player.play, audio_path)
 
             except Exception as e:
-                logger.error(f"处理任务出错: {e}")
+                logger.error(f"批量处理出错: {e}")
 
     async def run(self):
         self._running = True
@@ -288,10 +316,11 @@ class LiveAssistant:
             logger.info("正在连接 TikTok 直播间...")
         else:
             logger.info("正在连接抖音直播间...")
+        logger.info(f"批量回复间隔: {self._batch_interval}s")
         logger.info("=" * 50)
 
         danmaku_task = asyncio.create_task(self.danmaku.start())
-        process_task = asyncio.create_task(self._process_tasks())
+        process_task = asyncio.create_task(self._batch_loop())
 
         try:
             await asyncio.gather(danmaku_task, process_task)
@@ -305,7 +334,9 @@ class LiveAssistant:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="直播 AI 语音助手（抖音 / TikTok / YouTube）")
+    parser = argparse.ArgumentParser(
+        description="直播 AI 语音助手（抖音 / TikTok / YouTube）"
+    )
     parser.add_argument(
         "--platform",
         type=str,
@@ -318,12 +349,8 @@ def main():
     parser.add_argument(
         "--user", type=str, default="", help="TikTok 用户名 (如 @username)"
     )
-    parser.add_argument(
-        "--video", type=str, default="", help="YouTube 视频 ID"
-    )
-    parser.add_argument(
-        "--channel", type=str, default="", help="YouTube 频道 ID"
-    )
+    parser.add_argument("--video", type=str, default="", help="YouTube 视频 ID")
+    parser.add_argument("--channel", type=str, default="", help="YouTube 频道 ID")
     parser.add_argument("--mock", action="store_true", help="使用模拟弹幕测试模式")
     parser.add_argument(
         "--config", type=str, default="config.yaml", help="配置文件路径"

@@ -25,6 +25,7 @@ export function AIConfig({ config, onChange }: Props) {
           onChange={(e) => set("system_prompt", e.target.value)}
         />
       </div>
+      <Field label="Batch Interval (seconds)" value={String(ai.batch_interval ?? 5)} onChange={(v) => set("batch_interval", Number(v) || 5)} />
       <div className="flex items-center">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-[13px] font-medium text-[var(--font-primary)]">Multilingual</span>

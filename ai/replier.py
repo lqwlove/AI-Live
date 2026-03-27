@@ -27,8 +27,15 @@ def parse_lang_reply(raw: str) -> tuple[str, str]:
 class AIReplier:
     """调用 LLM API 生成直播间回复"""
 
-    def __init__(self, api_key: str, base_url: str, model: str, system_prompt: str,
-                 max_history: int = 10, multilang: bool = False):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        model: str,
+        system_prompt: str,
+        max_history: int = 10,
+        multilang: bool = False,
+    ):
         self.model = model
         self.multilang = multilang
         self.system_prompt = system_prompt
@@ -53,7 +60,7 @@ class AIReplier:
         self._history.append({"role": "user", "content": user_msg})
 
         if len(self._history) > self.max_history * 2:
-            self._history = self._history[-self.max_history * 2:]
+            self._history = self._history[-self.max_history * 2 :]
 
         messages = [
             {"role": "system", "content": self.system_prompt},
@@ -93,7 +100,11 @@ class AIReplier:
             f"Hi {user}! Thanks for watching, we'll explain that soon.",
             f"Good question {user}! Stay tuned, we'll get to that.",
         ]
-        if self.multilang and any(c.isascii() for c in content) and not any('\u4e00' <= c <= '\u9fff' for c in content):
+        if (
+            self.multilang
+            and any(c.isascii() for c in content)
+            and not any("\u4e00" <= c <= "\u9fff" for c in content)
+        ):
             reply = random.choice(en_templates)
             lang = "en"
         else:
@@ -101,6 +112,44 @@ class AIReplier:
             lang = "zh"
         logger.info(f"模拟回复 [{user}] (lang={lang}): {reply}")
         return lang, reply
+
+    def batch_reply(self, comments: list[dict]) -> tuple[str, str]:
+        """Process a batch of comments with a single LLM call (simple mode)."""
+        if self._mock_mode:
+            users = [c["user"] for c in comments]
+            return self._mock_reply(
+                users[0] if users else "观众",
+                comments[0]["content"] if comments else "",
+            )
+
+        formatted = "\n".join(f"- {c['user']}：{c['content']}" for c in comments)
+        user_msg = f"以下是最近一批观众评论，请挑重点统一回复：\n{formatted}"
+        self._history.append({"role": "user", "content": user_msg})
+
+        if len(self._history) > self.max_history * 2:
+            self._history = self._history[-self.max_history * 2 :]
+
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            *self._history,
+        ]
+
+        try:
+            resp = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=250,
+                temperature=0.8,
+            )
+            raw = resp.choices[0].message.content.strip()
+            self._history.append({"role": "assistant", "content": raw})
+
+            if self.multilang:
+                return parse_lang_reply(raw)
+            return "zh", raw
+        except Exception as e:
+            logger.error(f"AI 批量回复生成失败: {e}")
+            return "zh", ""
 
     def clear_history(self):
         self._history.clear()

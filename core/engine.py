@@ -1,11 +1,12 @@
 """
-LiveEngine — refactored from main.py LiveAssistant.
+LiveEngine — batch-mode live assistant engine.
 
-Differences from the original:
-  * No sys.exit(); raises ConfigError instead.
-  * All state changes are broadcast via EventBus.
-  * start() / stop() are async and safe to call from an API handler.
-  * Statistics (messages, ai_replies, audio_played, uptime) are maintained.
+Key design:
+  * Comments accumulate in a CommentBuffer.
+  * A timer loop drains the buffer every *batch_interval* seconds.
+  * If there are new comments, they are sent to the AI in one batch call.
+  * AI picks the important questions and returns a single combined reply.
+  * TTS synthesises and plays that reply once.
 """
 
 import asyncio
@@ -15,10 +16,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from config import Config
 from core.events import Event, EventBus, EventType
-from ai.replier import AIReplier
 from tts.speaker import TTSSpeaker
 from utils.audio_player import AudioPlayer
-from utils.message_queue import ChatTask, MessageFilter, TaskQueue
+from utils.message_queue import ChatTask, CommentBuffer, MessageFilter
 
 logger = logging.getLogger(__name__)
 
@@ -39,15 +39,17 @@ class LiveEngine:
         self._reply_prefix = ""
 
         self.danmaku = None
-        self.ai: AIReplier | None = None
+        self.ai = None
         self.tts = None
         self._edge_tts_fallback: TTSSpeaker | None = None
         self._tts_engine = "edge-tts"
         self.player: AudioPlayer | None = None
         self.msg_filter: MessageFilter | None = None
-        self.task_queue: TaskQueue | None = None
+        self.comment_buffer: CommentBuffer | None = None
+        self.product_store = None
         self.executor: ThreadPoolExecutor | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._batch_interval: float = 5.0
 
         self._like_buffer: dict[str, int] = {}
         self._like_total = 0
@@ -65,9 +67,11 @@ class LiveEngine:
         mock_mode = kwargs.get("mock_mode", False)
         if mock_mode:
             from danmaku.client import MockDanmakuClient
+
             self.danmaku = MockDanmakuClient(interval=5.0)
         elif platform == "youtube":
             from danmaku.youtube_client import YouTubeDanmakuClient
+
             yt_cfg = self.config.get("youtube")
             video_id = kwargs.get("video_id") or yt_cfg.get("video_id", "")
             channel_id = kwargs.get("channel_id") or yt_cfg.get("channel_id", "")
@@ -87,29 +91,65 @@ class LiveEngine:
             self._reply_prefix = yt_cfg.get("reply_prefix", "")
         elif platform == "tiktok":
             from danmaku.tiktok_client import TikTokDanmakuClient
-            unique_id = kwargs.get("unique_id") or self.config.get("tiktok", "unique_id")
+
+            unique_id = kwargs.get("unique_id") or self.config.get(
+                "tiktok", "unique_id"
+            )
             if not unique_id:
                 raise ConfigError("TikTok 需要 unique_id")
             proxy = self.config.get("tiktok", "proxy")
             self.danmaku = TikTokDanmakuClient(unique_id, proxy=proxy)
         else:
             from danmaku.client import DouyinDanmakuClient
-            room_id = kwargs.get("room_id") or kwargs.get("live_url") or self.config.get("douyin", "room_id")
+
+            room_id = (
+                kwargs.get("room_id")
+                or kwargs.get("live_url")
+                or self.config.get("douyin", "room_id")
+            )
             if not room_id:
                 raise ConfigError("抖音需要 room_id 或 live_url")
             cookie = self.config.get("douyin", "cookie")
             self.danmaku = DouyinDanmakuClient(room_id, cookie=cookie)
 
-        # --- AI ---
+        # --- Knowledge base ---
+        knowledge_cfg = self.config.get("knowledge")
+        if knowledge_cfg.get("enabled"):
+            from knowledge.product_store import ProductStore
+
+            self.product_store = ProductStore(
+                file_path=knowledge_cfg.get("products_file", "products.json"),
+                max_match=knowledge_cfg.get("max_match_products", 3),
+            )
+
+        # --- AI (agent or simple) ---
         ai_cfg = self.config.get("ai")
-        self.ai = AIReplier(
-            api_key=ai_cfg["api_key"],
-            base_url=ai_cfg["base_url"],
-            model=ai_cfg["model"],
-            system_prompt=ai_cfg["system_prompt"],
-            max_history=ai_cfg["max_history"],
-            multilang=ai_cfg.get("multilang", False),
-        )
+        engine_type = ai_cfg.get("engine", "agent")
+        if engine_type == "agent":
+            from ai.agent import LiveAgent
+
+            self.ai = LiveAgent(
+                api_key=ai_cfg["api_key"],
+                base_url=ai_cfg["base_url"],
+                model=ai_cfg["model"],
+                system_prompt=ai_cfg["system_prompt"],
+                max_history=ai_cfg["max_history"],
+                multilang=ai_cfg.get("multilang", False),
+                product_store=self.product_store,
+            )
+        else:
+            from ai.replier import AIReplier
+
+            self.ai = AIReplier(
+                api_key=ai_cfg["api_key"],
+                base_url=ai_cfg["base_url"],
+                model=ai_cfg["model"],
+                system_prompt=ai_cfg["system_prompt"],
+                max_history=ai_cfg["max_history"],
+                multilang=ai_cfg.get("multilang", False),
+            )
+
+        self._batch_interval = float(ai_cfg.get("batch_interval", 5))
 
         # --- TTS ---
         tts_cfg = self.config.get("tts")
@@ -122,6 +162,7 @@ class LiveEngine:
         )
         if self._tts_engine == "volcengine":
             from tts.volcengine_speaker import VolcengineSpeaker
+
             vc_cfg = self.config.get("volcengine")
             self.tts = VolcengineSpeaker(
                 api_key=vc_cfg.get("api_key", ""),
@@ -146,8 +187,8 @@ class LiveEngine:
             cooldown=filter_cfg["cooldown_seconds"],
         )
 
-        # --- Queue ---
-        self.task_queue = TaskQueue(max_size=50)
+        # --- Comment buffer & executor ---
+        self.comment_buffer = CommentBuffer(max_size=100)
         self.executor = ThreadPoolExecutor(max_workers=2)
 
     # ---- Event callbacks ------------------------------------------------
@@ -161,19 +202,20 @@ class LiveEngine:
         logger.info(f"💬 [{user}]: {content}")
 
         self.event_bus.emit_sync(
-            Event(EventType.CHAT_RECEIVED, {"user": user, "content": content, "user_id": user_id}),
+            Event(
+                EventType.CHAT_RECEIVED,
+                {"user": user, "content": content, "user_id": user_id},
+            ),
             self._loop,
         )
 
         if self.msg_filter and self.msg_filter.should_reply(user_id, content):
-            logger.info(f"✅ 触发词匹配 [{user}]: {content} → 加入处理队列")
-            task = ChatTask(user=user, content=content)
-            if self._loop and self._loop.is_running():
-                self._loop.call_soon_threadsafe(
-                    self._loop.create_task, self.task_queue.put(task)
-                )
+            logger.info(
+                f"✅ 触发词匹配 [{user}]: {content} → 加入缓冲区 (buffer={self.comment_buffer.size + 1})"
+            )
+            self.comment_buffer.append(ChatTask(user=user, content=content))
         else:
-            logger.debug(f"⏭️ 跳过 [{user}]: {content}（未匹配触发词）")
+            logger.info(f"⏭️ 跳过 [{user}]: {content}（未匹配触发词）")
 
     def _on_like(self, data: dict):
         user = data.get("user", "未知用户")
@@ -183,7 +225,9 @@ class LiveEngine:
         if total:
             self._like_total = max(self._like_total, total)
         if self._like_flush_handle is None and self._loop:
-            self._like_flush_handle = self._loop.call_later(self._like_throttle, self._flush_likes)
+            self._like_flush_handle = self._loop.call_later(
+                self._like_throttle, self._flush_likes
+            )
 
     def _flush_likes(self):
         self._like_flush_handle = None
@@ -196,7 +240,10 @@ class LiveEngine:
         if len(parts) > 5:
             summary += f" 等{len(parts)}人"
         logger.info(f"❤️ 点赞 +{total_count}（{summary}）")
-        self.event_bus.emit_sync(Event(EventType.LIKE, {"count": total_count, "total": self._like_total}), self._loop)
+        self.event_bus.emit_sync(
+            Event(EventType.LIKE, {"count": total_count, "total": self._like_total}),
+            self._loop,
+        )
 
     def _on_gift(self, data: dict):
         user = data.get("user", "未知用户")
@@ -215,53 +262,87 @@ class LiveEngine:
         logger.info(f"已连接到直播间: {room_id}")
         self.event_bus.emit_sync(Event(EventType.CONNECTED, data), self._loop)
 
-    # ---- Task processing ------------------------------------------------
+    # ---- Batch processing -----------------------------------------------
 
-    async def _process_tasks(self):
+    async def _batch_loop(self):
+        """Timer loop: drain comment buffer every *batch_interval* seconds."""
+        logger.info(f"🔄 批量处理循环已启动，间隔={self._batch_interval}s")
         while self.running:
-            try:
-                task = await asyncio.wait_for(self.task_queue.get(), timeout=1.0)
-            except asyncio.TimeoutError:
+            await asyncio.sleep(self._batch_interval)
+            buf_size = self.comment_buffer.size
+            comments = self.comment_buffer.drain()
+            if not comments:
+                logger.debug(f"🔄 轮询: 缓冲区为空，跳过")
                 continue
 
-            try:
-                logger.info(f"🤖 [AI] 开始为 [{task.user}] 生成回复，问题: {task.content}")
-                await self.event_bus.emit(Event(EventType.AI_REPLY_START, {"user": task.user, "content": task.content}))
+            batch = [{"user": t.user, "content": t.content} for t in comments]
+            users_str = ", ".join(t.user for t in comments[:5])
+            logger.info(
+                f"🔄 收集到 {len(batch)} 条增量评论 [{users_str}]，开始批量处理"
+            )
 
+            await self.event_bus.emit(
+                Event(
+                    EventType.AI_REPLY_START,
+                    {
+                        "user": users_str,
+                        "content": f"{len(batch)} comments",
+                    },
+                )
+            )
+
+            try:
                 loop = asyncio.get_event_loop()
                 t0 = time.time()
-                lang, reply = await loop.run_in_executor(self.executor, self.ai.reply, task.user, task.content)
+                lang, reply = await loop.run_in_executor(
+                    self.executor, self.ai.batch_reply, batch
+                )
                 ai_ms = int((time.time() - t0) * 1000)
 
                 if not reply:
-                    logger.warning(f"🤖 [AI] 回复为空，跳过 [{task.user}]")
+                    logger.warning("🤖 [AI] 批量回复为空，跳过")
                     continue
-                task.reply_text = reply
+
                 self.stats["ai_replies"] += 1
-                logger.info(f"🤖 [AI] 回复完成 ({ai_ms}ms) [{lang}] → {reply}")
+                logger.info(f"🤖 [AI] 批量回复完成 ({ai_ms}ms) [{lang}] → {reply}")
 
-                await self.event_bus.emit(Event(EventType.AI_REPLY_DONE, {
-                    "user": task.user, "content": task.content, "reply": reply, "lang": lang,
-                }))
+                await self.event_bus.emit(
+                    Event(
+                        EventType.AI_REPLY_DONE,
+                        {
+                            "user": users_str,
+                            "content": f"{len(batch)} comments",
+                            "reply": reply,
+                            "lang": lang,
+                        },
+                    )
+                )
 
+                # YouTube auto-reply
                 if self._auto_reply_chat and hasattr(self.danmaku, "send_message"):
-                    chat_reply = f"{self._reply_prefix}@{task.user} {reply}"
-                    await loop.run_in_executor(self.executor, self.danmaku.send_message, chat_reply)
+                    await loop.run_in_executor(
+                        self.executor,
+                        self.danmaku.send_message,
+                        f"{self._reply_prefix}{reply}",
+                    )
 
-                if lang == "en":
-                    speak_text = f"{task.user} asked: {task.content}. {reply}"
-                else:
-                    speak_text = f"{task.user}问：{task.content}。{reply}"
-
-                logger.info(f"🗣️ [TTS] 开始合成语音 (引擎: {self._tts_engine})，文本: {speak_text[:60]}...")
-                await self.event_bus.emit(Event(EventType.TTS_START, {"text": speak_text}))
+                # TTS
+                speak_text = reply
+                logger.info(
+                    f"🗣️ [TTS] 开始合成语音 (引擎: {self._tts_engine})，文本: {speak_text[:60]}..."
+                )
+                await self.event_bus.emit(
+                    Event(EventType.TTS_START, {"text": speak_text})
+                )
 
                 t1 = time.time()
                 if self._tts_engine == "volcengine":
                     audio_path = await self.tts.synthesize(speak_text, lang=lang)
                     if not audio_path:
                         logger.warning("🗣️ [TTS] 火山引擎合成失败，降级到 edge-tts")
-                        audio_path = await self._edge_tts_fallback.synthesize(speak_text)
+                        audio_path = await self._edge_tts_fallback.synthesize(
+                            speak_text
+                        )
                 else:
                     audio_path = await self.tts.synthesize(speak_text)
                 tts_ms = int((time.time() - t1) * 1000)
@@ -269,28 +350,40 @@ class LiveEngine:
                 if not audio_path:
                     logger.error("🗣️ [TTS] 语音合成失败，无音频文件")
                     continue
-                task.audio_path = audio_path
                 logger.info(f"🗣️ [TTS] 合成完成 ({tts_ms}ms) → {audio_path}")
-                await self.event_bus.emit(Event(EventType.TTS_DONE, {"audio_path": audio_path}))
+                await self.event_bus.emit(
+                    Event(EventType.TTS_DONE, {"audio_path": audio_path})
+                )
 
-                logger.info(f"🔊 [播放] 开始播放 [{task.user}] 的回复: {reply}")
-                await self.event_bus.emit(Event(EventType.AUDIO_PLAYING, {"user": task.user, "reply": reply}))
+                # Play
+                logger.info(f"🔊 [播放] 开始播放批量回复")
+                await self.event_bus.emit(
+                    Event(EventType.AUDIO_PLAYING, {"user": users_str, "reply": reply})
+                )
                 t2 = time.time()
                 await loop.run_in_executor(self.executor, self.player.play, audio_path)
                 play_ms = int((time.time() - t2) * 1000)
                 self.stats["audio_played"] += 1
-                logger.info(f"🔊 [播放] 播放完成 ({play_ms}ms) | 总计: AI {ai_ms}ms + TTS {tts_ms}ms + 播放 {play_ms}ms = {ai_ms + tts_ms + play_ms}ms")
-                await self.event_bus.emit(Event(EventType.AUDIO_DONE, {"user": task.user}))
-
+                logger.info(
+                    f"🔊 [播放] 播放完成 ({play_ms}ms) | "
+                    f"总计: AI {ai_ms}ms + TTS {tts_ms}ms + 播放 {play_ms}ms = {ai_ms + tts_ms + play_ms}ms"
+                )
+                await self.event_bus.emit(
+                    Event(EventType.AUDIO_DONE, {"user": users_str})
+                )
                 await self._emit_stats()
 
             except Exception as e:
-                logger.error(f"❌ 处理任务出错: {e}", exc_info=True)
-                await self.event_bus.emit(Event(EventType.SESSION_ERROR, {"error": str(e)}))
+                logger.error(f"❌ 批量处理出错: {e}", exc_info=True)
+                await self.event_bus.emit(
+                    Event(EventType.SESSION_ERROR, {"error": str(e)})
+                )
 
     async def _emit_stats(self):
         uptime = time.time() - self.start_time if self.start_time else 0
-        await self.event_bus.emit(Event(EventType.STATS_UPDATE, {**self.stats, "uptime": uptime}))
+        await self.event_bus.emit(
+            Event(EventType.STATS_UPDATE, {**self.stats, "uptime": uptime})
+        )
 
     # ---- Lifecycle -------------------------------------------------------
 
@@ -310,11 +403,15 @@ class LiveEngine:
         self.danmaku.on("member", self._on_member)
         self.danmaku.on("connected", self._on_connected)
 
-        logger.info(f"启动直播助手 — 平台: {platform}")
-        await self.event_bus.emit(Event(EventType.SESSION_STARTED, {"platform": platform}))
+        logger.info(
+            f"启动直播助手 — 平台: {platform}，批量间隔: {self._batch_interval}s"
+        )
+        await self.event_bus.emit(
+            Event(EventType.SESSION_STARTED, {"platform": platform})
+        )
 
         self._danmaku_task = asyncio.create_task(self.danmaku.start())
-        self._process_task = asyncio.create_task(self._process_tasks())
+        self._process_task = asyncio.create_task(self._batch_loop())
 
     async def stop(self):
         if not self.running:

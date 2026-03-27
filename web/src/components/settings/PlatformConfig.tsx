@@ -35,7 +35,7 @@ export function PlatformConfig({ config, onChange }: Props) {
             <TabsTrigger
               key={tab.key}
               value={tab.key}
-              className="rounded-none border-0 border-b-2 border-transparent bg-transparent px-4 py-2.5 text-[13px] font-medium text-[var(--font-muted)] shadow-none data-active:border-[var(--font-primary)] data-active:bg-transparent data-active:text-[var(--font-primary)] dark:data-active:bg-transparent"
+              className="flex-none rounded-none border-0 border-b-2 border-transparent bg-transparent px-4 py-2.5 text-[13px] font-medium text-[var(--font-muted)] shadow-none data-active:border-[var(--font-primary)] data-active:bg-transparent data-active:text-[var(--font-primary)] dark:data-active:bg-transparent"
             >
               {tab.label}
             </TabsTrigger>

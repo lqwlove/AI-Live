@@ -13,6 +13,7 @@ from core.session import SessionManager
 from api.routes.health import router as health_router
 from api.routes.config_routes import router as config_router
 from api.routes.session import router as session_router
+from api.routes.products import router as products_router
 from api.ws import router as ws_router
 
 
@@ -36,13 +37,23 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
     event_bus = EventBus()
     session_manager = SessionManager(config, event_bus)
 
+    from knowledge.product_store import ProductStore
+
+    knowledge_cfg = config.get("knowledge")
+    product_store = ProductStore(
+        file_path=knowledge_cfg.get("products_file", "products.json"),
+        max_match=knowledge_cfg.get("max_match_products", 3),
+    )
+
     app.state.config = config
     app.state.event_bus = event_bus
     app.state.session_manager = session_manager
+    app.state.product_store = product_store
 
     app.include_router(health_router)
     app.include_router(config_router)
     app.include_router(session_router)
+    app.include_router(products_router)
     app.include_router(ws_router)
 
     dist_dir = os.path.join(os.path.dirname(__file__), "..", "web", "dist")

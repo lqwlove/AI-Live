@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Settings, Play, Square } from "lucide-react";
+import { LayoutDashboard, Settings, Play, Square, Package } from "lucide-react";
 import { useSessionStore } from "@/stores/sessionStore";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -15,6 +15,7 @@ const NAV_ITEMS: {
   end?: boolean;
 }[] = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
+  { to: "/products", icon: Package, label: "Products" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
