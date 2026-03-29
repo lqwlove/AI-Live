@@ -21,10 +21,9 @@ from proto.douyin import (
     RoomUserSeqMessage, ControlMessage,
 )
 from ac_signature import get__ac_signature
+from utils.paths import get_bundle_dir
 
 logger = logging.getLogger(__name__)
-
-PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def generate_ms_token(length=182):
@@ -44,7 +43,7 @@ def generate_signature(wss_url):
     param_str = ','.join(tpl_params)
     md5_param = hashlib.md5(param_str.encode()).hexdigest()
 
-    wrapper_path = os.path.join(PROJECT_DIR, 'sign_wrapper.js')
+    wrapper_path = os.path.join(get_bundle_dir(), 'sign_wrapper.js')
     try:
         result = subprocess.run(
             ['node', wrapper_path, md5_param],

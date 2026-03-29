@@ -11,6 +11,7 @@ Key design:
 
 import asyncio
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -19,6 +20,7 @@ from core.events import Event, EventBus, EventType
 from tts.speaker import TTSSpeaker
 from utils.audio_player import AudioPlayer
 from utils.message_queue import ChatTask, CommentBuffer, MessageFilter
+from utils.paths import get_data_path
 
 logger = logging.getLogger(__name__)
 
@@ -154,11 +156,14 @@ class LiveEngine:
         # --- TTS ---
         tts_cfg = self.config.get("tts")
         self._tts_engine = tts_cfg.get("engine", "edge-tts")
+        output_dir = tts_cfg["output_dir"]
+        if not os.path.isabs(output_dir):
+            output_dir = get_data_path(output_dir)
         self._edge_tts_fallback = TTSSpeaker(
             voice=tts_cfg["voice"],
             rate=tts_cfg["rate"],
             volume=tts_cfg["volume"],
-            output_dir=tts_cfg["output_dir"],
+            output_dir=output_dir,
         )
         if self._tts_engine == "volcengine":
             from tts.volcengine_speaker import VolcengineSpeaker
@@ -170,7 +175,7 @@ class LiveEngine:
                 access_token=vc_cfg.get("access_token", ""),
                 speaker_id=vc_cfg["speaker_id"],
                 resource_id=vc_cfg.get("resource_id", "seed-icl-2.0"),
-                output_dir=tts_cfg["output_dir"],
+                output_dir=output_dir,
             )
         else:
             self.tts = self._edge_tts_fallback

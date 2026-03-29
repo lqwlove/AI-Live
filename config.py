@@ -1,5 +1,8 @@
 import os
+
 import yaml
+
+from utils.paths import get_data_path
 
 DEFAULT_CONFIG = {
     "douyin": {
@@ -94,7 +97,9 @@ _SENSITIVE_KEYS = re.compile(r"(api_key|access_token|cookie|secret)", re.I)
 
 
 class Config:
-    def __init__(self, config_path="config.yaml"):
+    def __init__(self, config_path: str | None = None):
+        if config_path is None:
+            config_path = get_data_path("config.yaml")
         self._path = config_path
         self._data = copy.deepcopy(DEFAULT_CONFIG)
         if os.path.exists(config_path):

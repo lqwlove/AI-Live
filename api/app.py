@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from config import Config
 from core.events import EventBus
 from core.session import SessionManager
+from utils.paths import get_bundle_dir, get_data_path
 
 from api.routes.health import router as health_router
 from api.routes.config_routes import router as config_router
@@ -17,7 +18,10 @@ from api.routes.products import router as products_router
 from api.ws import router as ws_router
 
 
-def create_app(config_path: str = "config.yaml") -> FastAPI:
+def create_app(config_path: str | None = None) -> FastAPI:
+    if config_path is None:
+        config_path = get_data_path("config.yaml")
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -40,8 +44,11 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
     from knowledge.product_store import ProductStore
 
     knowledge_cfg = config.get("knowledge")
+    products_file = knowledge_cfg.get("products_file", "products.json")
+    if not os.path.isabs(products_file):
+        products_file = get_data_path(products_file)
     product_store = ProductStore(
-        file_path=knowledge_cfg.get("products_file", "products.json"),
+        file_path=products_file,
         max_match=knowledge_cfg.get("max_match_products", 3),
     )
 
@@ -56,7 +63,13 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
     app.include_router(products_router)
     app.include_router(ws_router)
 
-    dist_dir = os.path.join(os.path.dirname(__file__), "..", "web", "dist")
+    # Serve TTS audio files for browser playback
+    audio_dir = get_data_path("audio_cache")
+    os.makedirs(audio_dir, exist_ok=True)
+    app.mount("/audio", StaticFiles(directory=audio_dir), name="audio")
+
+    # Serve pre-built frontend (web/dist)
+    dist_dir = os.path.join(get_bundle_dir(), "web", "dist")
     if os.path.isdir(dist_dir):
         app.mount(
             "/assets",
