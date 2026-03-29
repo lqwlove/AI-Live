@@ -15,6 +15,7 @@ from api.routes.health import router as health_router
 from api.routes.config_routes import router as config_router
 from api.routes.session import router as session_router
 from api.routes.products import router as products_router
+from api.routes.bgm import router as bgm_router
 from api.ws import router as ws_router
 
 
@@ -61,6 +62,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
     app.include_router(config_router)
     app.include_router(session_router)
     app.include_router(products_router)
+    app.include_router(bgm_router)
     app.include_router(ws_router)
 
     # Serve TTS audio files for browser playback

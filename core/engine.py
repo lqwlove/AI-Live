@@ -19,6 +19,7 @@ from config import Config
 from core.events import Event, EventBus, EventType
 from tts.speaker import TTSSpeaker
 from utils.audio_player import AudioPlayer
+from utils.bgm_player import BgmPlayer
 from utils.message_queue import ChatTask, CommentBuffer, MessageFilter
 from utils.paths import get_data_path
 
@@ -46,6 +47,7 @@ class LiveEngine:
         self._edge_tts_fallback: TTSSpeaker | None = None
         self._tts_engine = "edge-tts"
         self.player: AudioPlayer | None = None
+        self.bgm: BgmPlayer | None = None
         self.msg_filter: MessageFilter | None = None
         self.comment_buffer: CommentBuffer | None = None
         self.product_store = None
@@ -182,6 +184,18 @@ class LiveEngine:
 
         # --- Audio player ---
         self.player = AudioPlayer(use_afplay=True)
+
+        # --- BGM ---
+        bgm_cfg = self.config.get("bgm")
+        if bgm_cfg.get("enabled"):
+            bgm_dir = bgm_cfg.get("dir", "bgm")
+            if not os.path.isabs(bgm_dir):
+                bgm_dir = get_data_path(bgm_dir)
+            self.bgm = BgmPlayer(
+                bgm_dir=bgm_dir,
+                volume=bgm_cfg.get("volume", 0.3),
+                duck_volume=bgm_cfg.get("duck_volume", 0.05),
+            )
 
         # --- Filter ---
         filter_cfg = self.config.get("filter")
@@ -360,14 +374,18 @@ class LiveEngine:
                     Event(EventType.TTS_DONE, {"audio_path": audio_path})
                 )
 
-                # Play
+                # Play (duck BGM while TTS speaks)
                 logger.info(f"🔊 [播放] 开始播放批量回复")
+                if self.bgm:
+                    self.bgm.duck()
                 await self.event_bus.emit(
                     Event(EventType.AUDIO_PLAYING, {"user": users_str, "reply": reply})
                 )
                 t2 = time.time()
                 await loop.run_in_executor(self.executor, self.player.play, audio_path)
                 play_ms = int((time.time() - t2) * 1000)
+                if self.bgm:
+                    self.bgm.unduck()
                 self.stats["audio_played"] += 1
                 logger.info(
                     f"🔊 [播放] 播放完成 ({play_ms}ms) | "
@@ -415,6 +433,14 @@ class LiveEngine:
             Event(EventType.SESSION_STARTED, {"platform": platform})
         )
 
+        if self.bgm:
+            bgm_file = self.config.get("bgm").get("file", "")
+            self.bgm.play(bgm_file or None)
+            if self.bgm.is_playing:
+                await self.event_bus.emit(
+                    Event(EventType.BGM_STARTED, self.bgm.get_status())
+                )
+
         self._danmaku_task = asyncio.create_task(self.danmaku.start())
         self._process_task = asyncio.create_task(self._batch_loop())
 
@@ -422,6 +448,9 @@ class LiveEngine:
         if not self.running:
             return
         self.running = False
+        if self.bgm and self.bgm.is_playing:
+            self.bgm.stop()
+            await self.event_bus.emit(Event(EventType.BGM_STOPPED, {}))
         if self.danmaku:
             self.danmaku.stop()
         for t in (self._danmaku_task, self._process_task):

@@ -87,6 +87,13 @@ DEFAULT_CONFIG = {
     "audio": {
         "device": "default",
     },
+    "bgm": {
+        "enabled": False,
+        "dir": "bgm",
+        "file": "",
+        "volume": 0.3,
+        "duck_volume": 0.05,
+    },
 }
 
 

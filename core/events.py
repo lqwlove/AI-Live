@@ -24,6 +24,8 @@ class EventType(Enum):
     GIFT = "gift"
     MEMBER_JOIN = "member_join"
     CONNECTED = "connected"
+    BGM_STARTED = "bgm_started"
+    BGM_STOPPED = "bgm_stopped"
 
 
 @dataclass

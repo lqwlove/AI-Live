@@ -7,19 +7,25 @@ logger = logging.getLogger(__name__)
 
 
 class AudioPlayer:
-    """音频播放器，使用 macOS 原生 afplay 或 pygame 播放 mp3"""
+    """音频播放器，使用 macOS 原生 afplay 或 pygame 播放 mp3。
+
+    pygame 模式下使用 Sound channel（而非 music）播放，
+    以便 BGM 可以同时通过 pygame.mixer.music 循环播放。
+    """
 
     def __init__(self, use_afplay: bool = True):
         self.use_afplay = use_afplay and sys.platform == "darwin"
+        self._pygame = None
         if not self.use_afplay:
             self._init_pygame()
 
     def _init_pygame(self):
         try:
             import pygame
-            pygame.mixer.init()
+            if not pygame.mixer.get_init():
+                pygame.mixer.init()
             self._pygame = pygame
-            logger.info("使用 pygame 播放音频")
+            logger.info("使用 pygame Sound channel 播放音频")
         except ImportError:
             logger.error("pygame 未安装，请运行: pip install pygame")
             self._pygame = None
@@ -49,12 +55,13 @@ class AudioPlayer:
             self._play_pygame(audio_path)
 
     def _play_pygame(self, audio_path: str):
-        """使用 pygame 播放，阻塞直到播放完成"""
+        """使用 pygame.mixer.Sound 播放，不占用 music 通道（留给 BGM）。"""
         try:
             import time
-            self._pygame.mixer.music.load(audio_path)
-            self._pygame.mixer.music.play()
-            while self._pygame.mixer.music.get_busy():
-                time.sleep(0.1)
+            sound = self._pygame.mixer.Sound(audio_path)
+            channel = sound.play()
+            if channel:
+                while channel.get_busy():
+                    time.sleep(0.1)
         except Exception as e:
             logger.error(f"pygame 播放失败: {e}")
