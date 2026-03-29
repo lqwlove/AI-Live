@@ -87,7 +87,33 @@ class DouyinDanmakuClient:
         match = re.search(r"(\d{8,})", url_or_id)
         if match:
             return match.group(1)
+        # Douyin short links (v.douyin.com/xxx) need redirect resolution
+        if "douyin.com" in url_or_id:
+            resolved = self._resolve_short_url(url_or_id)
+            if resolved:
+                match = re.search(r"live\.douyin\.com/(\d+)", resolved)
+                if match:
+                    return match.group(1)
+                match = re.search(r"(\d{8,})", resolved)
+                if match:
+                    return match.group(1)
         raise ValueError(f"无法从 '{url_or_id}' 提取直播间ID")
+
+    @staticmethod
+    def _resolve_short_url(short_url: str) -> str | None:
+        try:
+            resp = requests.head(
+                short_url,
+                headers={"User-Agent": "Mozilla/5.0"},
+                allow_redirects=True,
+                timeout=10,
+            )
+            resolved = resp.url
+            logger.info(f"短链接解析: {short_url} → {resolved}")
+            return resolved
+        except Exception as e:
+            logger.error(f"短链接解析失败: {e}")
+            return None
 
     def on(self, event: str, callback: Callable):
         self._callbacks.setdefault(event, []).append(callback)

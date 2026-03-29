@@ -106,10 +106,12 @@ class LiveEngine:
         else:
             from danmaku.client import DouyinDanmakuClient
 
+            dy_cfg = self.config.get("douyin")
             room_id = (
                 kwargs.get("room_id")
                 or kwargs.get("live_url")
-                or self.config.get("douyin", "room_id")
+                or dy_cfg.get("room_id")
+                or dy_cfg.get("live_url")
             )
             if not room_id:
                 raise ConfigError("抖音需要 room_id 或 live_url")
