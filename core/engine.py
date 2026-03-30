@@ -13,6 +13,7 @@ import asyncio
 import logging
 import os
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from config import Config
@@ -22,6 +23,7 @@ from utils.audio_player import AudioPlayer
 from utils.bgm_player import BgmPlayer
 from utils.message_queue import ChatTask, CommentBuffer, MessageFilter
 from utils.paths import get_data_path
+from utils.zh_text import append_zh_in_parens, is_primarily_chinese
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +33,15 @@ class ConfigError(Exception):
 
 
 class LiveEngine:
-    def __init__(self, config: Config, event_bus: EventBus):
+    def __init__(
+        self,
+        config: Config,
+        event_bus: EventBus,
+        announcement_store=None,
+    ):
         self.config = config
         self.event_bus = event_bus
+        self.announcement_store = announcement_store
         self.running = False
         self.platform: str | None = None
         self.start_time: float | None = None
@@ -62,6 +70,19 @@ class LiveEngine:
 
         self._danmaku_task: asyncio.Task | None = None
         self._process_task: asyncio.Task | None = None
+        self._announce_task: asyncio.Task | None = None
+        self._bgm_skip_autostart = False
+        self._bgm_start_basename: str | None = None
+
+        audio_cfg = self.config.get("audio")
+        self.voice_volume = float(audio_cfg.get("voice_volume", 1.0))
+        ann_cfg = self.config.get("announce")
+        self._announce_interval = float(ann_cfg.get("interval_seconds", 30))
+        self.announce_enabled = False
+        self.announce_active_ids: list[str] = []
+        self.announce_hold = False
+        self._voice_lock: asyncio.Lock | None = None
+        self._to_zh = None
 
     def _init_components(self, platform: str, **kwargs):
         """Initialise AI, TTS, filter, player and the danmaku client."""
@@ -157,6 +178,16 @@ class LiveEngine:
 
         self._batch_interval = float(ai_cfg.get("batch_interval", 5))
 
+        self._to_zh = None
+        if ai_cfg.get("translate_display", True):
+            from ai.to_zh_translator import ToZhTranslator
+
+            self._to_zh = ToZhTranslator(
+                api_key=ai_cfg.get("api_key", ""),
+                base_url=ai_cfg.get("base_url", ""),
+                model=ai_cfg.get("model", "gpt-4o-mini"),
+            )
+
         # --- TTS ---
         tts_cfg = self.config.get("tts")
         self._tts_engine = tts_cfg.get("engine", "edge-tts")
@@ -189,10 +220,24 @@ class LiveEngine:
 
         # --- BGM ---
         bgm_cfg = self.config.get("bgm")
-        if bgm_cfg.get("enabled"):
-            bgm_dir = bgm_cfg.get("dir", "bgm")
-            if not os.path.isabs(bgm_dir):
-                bgm_dir = get_data_path(bgm_dir)
+        bgm_file_param = kwargs.get("bgm_file")
+        bgm_dir = bgm_cfg.get("dir", "bgm")
+        if not os.path.isabs(bgm_dir):
+            bgm_dir = get_data_path(bgm_dir)
+
+        self._bgm_skip_autostart = False
+        self._bgm_start_basename = None
+        if bgm_file_param is not None:
+            if isinstance(bgm_file_param, str) and bgm_file_param.strip() == "":
+                self._bgm_skip_autostart = True
+            elif isinstance(bgm_file_param, str) and bgm_file_param.strip():
+                self._bgm_start_basename = os.path.basename(bgm_file_param.strip())
+
+        want_bgm_player = bool(bgm_cfg.get("enabled")) or (
+            self._bgm_start_basename is not None
+        )
+
+        if want_bgm_player:
             self.bgm = BgmPlayer(
                 bgm_dir=bgm_dir,
                 volume=bgm_cfg.get("volume", 0.3),
@@ -222,21 +267,77 @@ class LiveEngine:
         self.stats["messages"] += 1
         logger.info(f"💬 [{user}]: {content}")
 
-        self.event_bus.emit_sync(
-            Event(
-                EventType.CHAT_RECEIVED,
-                {"user": user, "content": content, "user_id": user_id},
-            ),
-            self._loop,
+        msg_uid = uuid.uuid4().hex
+        payload: dict = {
+            "user": user,
+            "content": content,
+            "user_id": user_id,
+            "msg_uid": msg_uid,
+        }
+        ts = time.time()
+        ai_cfg = self.config.get("ai")
+        need_translate = (
+            ai_cfg.get("translate_display", True)
+            and self._to_zh
+            and self._to_zh.available
+            and not is_primarily_chinese(content)
         )
+        if need_translate:
+            self._schedule_chat_received_with_translation(payload, ts, content)
+        else:
+            ev = Event(EventType.CHAT_RECEIVED, payload, timestamp=ts)
+            self.event_bus.emit_sync(ev, self._loop)
+
+        pause_any = self.config.get("announce", "pause_on_any_chat")
+        if pause_any:
+            self.announce_hold = True
 
         if self.msg_filter and self.msg_filter.should_reply(user_id, content):
             logger.info(
                 f"✅ 触发词匹配 [{user}]: {content} → 加入缓冲区 (buffer={self.comment_buffer.size + 1})"
             )
             self.comment_buffer.append(ChatTask(user=user, content=content))
+            self.announce_hold = True
         else:
             logger.info(f"⏭️ 跳过 [{user}]: {content}（未匹配触发词）")
+
+    def _schedule_chat_received_with_translation(
+        self, payload: dict, ts: float, content: str
+    ):
+        """非中文：先译再发一条 chat_received，content 为 原文(译文)。"""
+        if not self._loop or not self.running:
+            return
+        msg_uid = str(payload.get("msg_uid", ""))
+
+        async def _run():
+            if not self.running or not self.executor:
+                return
+            out = dict(payload)
+            try:
+                loop = asyncio.get_event_loop()
+                zh = await loop.run_in_executor(
+                    self.executor, self._to_zh.translate, content
+                )
+            except Exception as e:
+                logger.debug("弹幕翻译任务失败: %s", e)
+                zh = ""
+            out["content"] = append_zh_in_parens(content, zh) if zh else content
+            if not self.running:
+                return
+            await self.event_bus.emit(
+                Event(EventType.CHAT_RECEIVED, out, timestamp=ts)
+            )
+            logger.info(
+                "chat_received 已投递(括号译文=%s) msg_uid=%s 预览=%s",
+                "有" if zh else "无",
+                msg_uid[:12],
+                out["content"][:48],
+            )
+
+        def _cb():
+            asyncio.create_task(_run())
+
+        self._loop.call_soon_threadsafe(_cb)
 
     def _on_like(self, data: dict):
         user = data.get("user", "未知用户")
@@ -285,34 +386,134 @@ class LiveEngine:
 
     # ---- Batch processing -----------------------------------------------
 
-    async def _batch_loop(self):
-        """Timer loop: drain comment buffer every *batch_interval* seconds."""
-        logger.info(f"🔄 批量处理循环已启动，间隔={self._batch_interval}s")
+    def _play_voice_path_sync(self, path: str):
+        if self.bgm:
+            self.bgm.duck()
+        try:
+            self.player.play(path, self.voice_volume)
+        finally:
+            if self.bgm:
+                self.bgm.unduck()
+
+    async def _play_voice_path(self, path: str, *, preempt: bool = False) -> None:
+        """串行播放人声；preempt=True 时先 stop() 打断当前口播/人声，再抢锁播放（AI 优先）。"""
+        if preempt:
+            self.player.stop()
+        loop = asyncio.get_event_loop()
+        async with self._voice_lock:
+            await loop.run_in_executor(self.executor, self._play_voice_path_sync, path)
+
+    def _resolve_announce_texts(self) -> list[str]:
+        if not self.announcement_store or not self.announce_active_ids:
+            return []
+        texts: list[str] = []
+        for iid in self.announce_active_ids:
+            item = self.announcement_store.get_by_id(iid)
+            if item and item.enabled and item.text.strip():
+                texts.append(item.text.strip())
+        return texts
+
+    async def _announce_loop(self):
+        logger.info("📢 自动播报循环已启动")
+        idx = 0
+        ann_lang = self.config.get("announce", "lang") or "zh"
         while self.running:
-            await asyncio.sleep(self._batch_interval)
-            buf_size = self.comment_buffer.size
-            comments = self.comment_buffer.drain()
-            if not comments:
-                logger.debug(f"🔄 轮询: 缓冲区为空，跳过")
+            await asyncio.sleep(0.2)
+            if not self.announce_enabled or not self.announcement_store:
+                await asyncio.sleep(0.8)
+                continue
+            texts = self._resolve_announce_texts()
+            if not texts:
+                await asyncio.sleep(0.8)
                 continue
 
-            batch = [{"user": t.user, "content": t.content} for t in comments]
-            users_str = ", ".join(t.user for t in comments[:5])
-            logger.info(
-                f"🔄 收集到 {len(batch)} 条增量评论 [{users_str}]，开始批量处理"
-            )
+            while self.announce_hold and self.running:
+                await asyncio.sleep(0.1)
+            if not self.running:
+                break
+
+            line = texts[idx % len(texts)]
+            idx += 1
 
             await self.event_bus.emit(
                 Event(
-                    EventType.AI_REPLY_START,
-                    {
-                        "user": users_str,
-                        "content": f"{len(batch)} comments",
-                    },
+                    EventType.ANNOUNCE_START,
+                    {"text": line[:200]},
                 )
             )
-
+            logger.info(f"📢 [自动播报] 合成: {line[:80]}...")
+            audio_path = ""
             try:
+                if self._tts_engine == "volcengine":
+                    audio_path = await self.tts.synthesize(line, lang=ann_lang)
+                    if not audio_path:
+                        audio_path = await self._edge_tts_fallback.synthesize(line)
+                else:
+                    audio_path = await self.tts.synthesize(line)
+            except Exception as e:
+                logger.error(f"📢 [自动播报] 合成出错: {e}", exc_info=True)
+                await self.event_bus.emit(
+                    Event(EventType.ANNOUNCE_DONE, {"ok": False, "error": str(e)})
+                )
+                await asyncio.sleep(self._announce_interval)
+                continue
+
+            if not audio_path:
+                logger.warning("📢 [自动播报] TTS 失败，跳过本条")
+                await self.event_bus.emit(Event(EventType.ANNOUNCE_DONE, {"ok": False}))
+                await asyncio.sleep(self._announce_interval)
+                continue
+
+            while self.announce_hold and self.running:
+                await asyncio.sleep(0.1)
+            if not self.running:
+                break
+            try:
+                await self._play_voice_path(audio_path, preempt=False)
+                self.stats["audio_played"] += 1
+                await self.event_bus.emit(Event(EventType.ANNOUNCE_DONE, {"ok": True}))
+                await self._emit_stats()
+            except Exception as e:
+                logger.error(f"📢 [自动播报] 播放出错: {e}", exc_info=True)
+                await self.event_bus.emit(
+                    Event(EventType.ANNOUNCE_DONE, {"ok": False, "error": str(e)})
+                )
+
+            await asyncio.sleep(self._announce_interval)
+
+    async def _batch_loop(self):
+        """Timer loop: drain comment buffer every *batch_interval* seconds."""
+        logger.info(f"🔄 批量处理循环已启动，间隔={self._batch_interval}s")
+        pause_any = self.config.get("announce", "pause_on_any_chat")
+        while self.running:
+            await asyncio.sleep(self._batch_interval)
+            comments = self.comment_buffer.drain()
+            try:
+                if not comments:
+                    if pause_any:
+                        self.announce_hold = False
+                    logger.debug("🔄 轮询: 缓冲区为空，跳过")
+                    continue
+
+                self.announce_hold = True
+                self.player.stop()
+
+                batch = [{"user": t.user, "content": t.content} for t in comments]
+                users_str = ", ".join(t.user for t in comments[:5])
+                logger.info(
+                    f"🔄 收集到 {len(batch)} 条增量评论 [{users_str}]，开始批量处理"
+                )
+
+                await self.event_bus.emit(
+                    Event(
+                        EventType.AI_REPLY_START,
+                        {
+                            "user": users_str,
+                            "content": f"{len(batch)} comments",
+                        },
+                    )
+                )
+
                 loop = asyncio.get_event_loop()
                 t0 = time.time()
                 lang, reply = await loop.run_in_executor(
@@ -327,19 +528,31 @@ class LiveEngine:
                 self.stats["ai_replies"] += 1
                 logger.info(f"🤖 [AI] 批量回复完成 ({ai_ms}ms) [{lang}] → {reply}")
 
-                await self.event_bus.emit(
-                    Event(
-                        EventType.AI_REPLY_DONE,
-                        {
-                            "user": users_str,
-                            "content": f"{len(batch)} comments",
-                            "reply": reply,
-                            "lang": lang,
-                        },
+                reply_zh = ""
+                ai_cfg = self.config.get("ai")
+                if (
+                    self._to_zh
+                    and self._to_zh.available
+                    and ai_cfg.get("translate_display", True)
+                    and not is_primarily_chinese(reply)
+                ):
+                    reply_zh = await loop.run_in_executor(
+                        self.executor, self._to_zh.translate, reply
                     )
+
+                reply_for_ui = (
+                    append_zh_in_parens(reply, reply_zh) if reply_zh else reply
+                )
+                done_payload: dict = {
+                    "user": users_str,
+                    "content": f"{len(batch)} comments",
+                    "reply": reply_for_ui,
+                    "lang": lang,
+                }
+                await self.event_bus.emit(
+                    Event(EventType.AI_REPLY_DONE, done_payload)
                 )
 
-                # YouTube auto-reply
                 if self._auto_reply_chat and hasattr(self.danmaku, "send_message"):
                     await loop.run_in_executor(
                         self.executor,
@@ -347,7 +560,6 @@ class LiveEngine:
                         f"{self._reply_prefix}{reply}",
                     )
 
-                # TTS
                 speak_text = reply
                 logger.info(
                     f"🗣️ [TTS] 开始合成语音 (引擎: {self._tts_engine})，文本: {speak_text[:60]}..."
@@ -376,18 +588,13 @@ class LiveEngine:
                     Event(EventType.TTS_DONE, {"audio_path": audio_path})
                 )
 
-                # Play (duck BGM while TTS speaks)
-                logger.info(f"🔊 [播放] 开始播放批量回复")
-                if self.bgm:
-                    self.bgm.duck()
+                logger.info("🔊 [播放] 打断口播并优先播放 AI 回复")
                 await self.event_bus.emit(
                     Event(EventType.AUDIO_PLAYING, {"user": users_str, "reply": reply})
                 )
                 t2 = time.time()
-                await loop.run_in_executor(self.executor, self.player.play, audio_path)
+                await self._play_voice_path(audio_path, preempt=True)
                 play_ms = int((time.time() - t2) * 1000)
-                if self.bgm:
-                    self.bgm.unduck()
                 self.stats["audio_played"] += 1
                 logger.info(
                     f"🔊 [播放] 播放完成 ({play_ms}ms) | "
@@ -403,6 +610,8 @@ class LiveEngine:
                 await self.event_bus.emit(
                     Event(EventType.SESSION_ERROR, {"error": str(e)})
                 )
+            finally:
+                self.announce_hold = False
 
     async def _emit_stats(self):
         uptime = time.time() - self.start_time if self.start_time else 0
@@ -411,6 +620,23 @@ class LiveEngine:
         )
 
     # ---- Lifecycle -------------------------------------------------------
+
+    def ensure_bgm_player(self) -> BgmPlayer | None:
+        """直播中按需创建 BGM（例如开播时未启用，中途再切歌）。"""
+        if self.bgm is not None:
+            return self.bgm
+        if not self.running:
+            return None
+        bgm_cfg = self.config.get("bgm")
+        bgm_dir = bgm_cfg.get("dir", "bgm")
+        if not os.path.isabs(bgm_dir):
+            bgm_dir = get_data_path(bgm_dir)
+        self.bgm = BgmPlayer(
+            bgm_dir=bgm_dir,
+            volume=bgm_cfg.get("volume", 0.3),
+            duck_volume=bgm_cfg.get("duck_volume", 0.05),
+        )
+        return self.bgm
 
     async def start(self, platform: str, **kwargs):
         if self.running:
@@ -421,6 +647,12 @@ class LiveEngine:
         self.start_time = time.time()
         self.stats = {"messages": 0, "ai_replies": 0, "audio_played": 0}
         self._loop = asyncio.get_running_loop()
+        self._voice_lock = asyncio.Lock()
+
+        audio_cfg = self.config.get("audio")
+        self.voice_volume = float(audio_cfg.get("voice_volume", 1.0))
+        ann_cfg = self.config.get("announce")
+        self._announce_interval = float(ann_cfg.get("interval_seconds", 30))
 
         self.danmaku.on("chat", self._on_chat)
         self.danmaku.on("like", self._on_like)
@@ -436,8 +668,19 @@ class LiveEngine:
         )
 
         if self.bgm:
-            bgm_file = self.config.get("bgm").get("file", "")
-            self.bgm.play(bgm_file or None)
+            if self._bgm_skip_autostart:
+                pass
+            elif self._bgm_start_basename:
+                path = os.path.join(self.bgm.bgm_dir, self._bgm_start_basename)
+                if os.path.isfile(path):
+                    self.bgm.play(path)
+                else:
+                    logger.warning(
+                        f"[BGM] 所选文件不存在: {self._bgm_start_basename}"
+                    )
+            else:
+                bgm_file = self.config.get("bgm").get("file", "")
+                self.bgm.play(bgm_file or None)
             if self.bgm.is_playing:
                 await self.event_bus.emit(
                     Event(EventType.BGM_STARTED, self.bgm.get_status())
@@ -445,6 +688,7 @@ class LiveEngine:
 
         self._danmaku_task = asyncio.create_task(self.danmaku.start())
         self._process_task = asyncio.create_task(self._batch_loop())
+        self._announce_task = asyncio.create_task(self._announce_loop())
 
     async def stop(self):
         if not self.running:
@@ -455,13 +699,14 @@ class LiveEngine:
             await self.event_bus.emit(Event(EventType.BGM_STOPPED, {}))
         if self.danmaku:
             self.danmaku.stop()
-        for t in (self._danmaku_task, self._process_task):
+        for t in (self._danmaku_task, self._process_task, self._announce_task):
             if t and not t.done():
                 t.cancel()
                 try:
                     await t
                 except (asyncio.CancelledError, Exception):
                     pass
+        self._announce_task = None
         if self.executor:
             self.executor.shutdown(wait=False)
             self.executor = None

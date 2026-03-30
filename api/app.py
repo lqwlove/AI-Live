@@ -16,6 +16,7 @@ from api.routes.config_routes import router as config_router
 from api.routes.session import router as session_router
 from api.routes.products import router as products_router
 from api.routes.bgm import router as bgm_router
+from api.routes.announce import router as announce_router
 from api.ws import router as ws_router
 
 
@@ -40,9 +41,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     config = Config(config_path)
     event_bus = EventBus()
-    session_manager = SessionManager(config, event_bus)
 
     from knowledge.product_store import ProductStore
+    from knowledge.announcement_store import AnnouncementStore
 
     knowledge_cfg = config.get("knowledge")
     products_file = knowledge_cfg.get("products_file", "products.json")
@@ -53,16 +54,26 @@ def create_app(config_path: str | None = None) -> FastAPI:
         max_match=knowledge_cfg.get("max_match_products", 3),
     )
 
+    ann_cfg = config.get("announce")
+    ann_file = ann_cfg.get("items_file", "announcements.json")
+    if not os.path.isabs(ann_file):
+        ann_file = get_data_path(ann_file)
+    announcement_store = AnnouncementStore(file_path=ann_file)
+
+    session_manager = SessionManager(config, event_bus, announcement_store)
+
     app.state.config = config
     app.state.event_bus = event_bus
     app.state.session_manager = session_manager
     app.state.product_store = product_store
+    app.state.announcement_store = announcement_store
 
     app.include_router(health_router)
     app.include_router(config_router)
     app.include_router(session_router)
     app.include_router(products_router)
     app.include_router(bgm_router)
+    app.include_router(announce_router)
     app.include_router(ws_router)
 
     # Serve TTS audio files for browser playback

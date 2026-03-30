@@ -13,26 +13,32 @@ export function AIConfig({ config, onChange }: Props) {
     <div className="flex flex-col gap-4 rounded-[10px] border border-[var(--border-app)] bg-[var(--bg-card)] px-5 pt-4 pb-5">
       <div className="flex items-center gap-2">
         <Bot size={16} className="text-[var(--accent-purple)]" />
-        <span className="text-sm font-semibold text-[var(--font-primary)]">AI Configuration</span>
+        <span className="text-sm font-semibold text-[var(--font-primary)]">AI 配置</span>
       </div>
-      <Field label="Model" value={ai.model as string} onChange={(v) => set("model", v)} />
-      <Field label="Base URL" value={ai.base_url as string} onChange={(v) => set("base_url", v)} />
+      <Field label="API 密钥" value={(ai.api_key as string) ?? ""} onChange={(v) => set("api_key", v)} password />
+      <Field label="模型" value={ai.model as string} onChange={(v) => set("model", v)} />
+      <Field label="接口地址（Base URL）" value={ai.base_url as string} onChange={(v) => set("base_url", v)} />
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-[var(--font-secondary)]">System Prompt</label>
+        <label className="text-xs font-medium text-[var(--font-secondary)]">系统提示词</label>
         <textarea
           className="h-20 resize-none rounded-md border border-[var(--border-app)] bg-[var(--input-bg)] px-3 py-2.5 text-[13px] text-[var(--font-primary)] outline-none focus:border-[var(--accent-purple)]"
           value={(ai.system_prompt as string) ?? ""}
           onChange={(e) => set("system_prompt", e.target.value)}
         />
       </div>
-      <Field label="Batch Interval (seconds)" value={String(ai.batch_interval ?? 5)} onChange={(v) => set("batch_interval", Number(v) || 5)} />
-      <div className="flex items-center">
+      <Field
+        label="批量处理间隔（秒）"
+        value={String(ai.batch_interval ?? 5)}
+        onChange={(v) => set("batch_interval", Number(v) || 5)}
+      />
+      <div className="flex items-center gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-[13px] font-medium text-[var(--font-primary)]">Multilingual</span>
-          <span className="text-[11px] text-[var(--font-muted)]">Auto-detect language and reply accordingly</span>
+          <span className="text-[13px] font-medium text-[var(--font-primary)]">多语言回复</span>
+          <span className="text-[11px] text-[var(--font-muted)]">自动识别观众语言并据此回复</span>
         </div>
         <button
           type="button"
+          aria-label="多语言"
           onClick={() => set("multilang", !(ai.multilang as boolean))}
           className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${(ai.multilang as boolean) ? "bg-[var(--accent-purple)]" : "bg-[var(--font-muted)]"}`}
         >
@@ -43,14 +49,26 @@ export function AIConfig({ config, onChange }: Props) {
   );
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function Field({
+  label,
+  value,
+  onChange,
+  password,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  password?: boolean;
+}) {
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-[var(--font-secondary)]">{label}</label>
       <input
+        type={password ? "password" : "text"}
         className="rounded-md border border-[var(--border-app)] bg-[var(--input-bg)] px-3 py-2.5 text-[13px] text-[var(--font-primary)] outline-none focus:border-[var(--accent-purple)]"
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
+        autoComplete={password ? "off" : undefined}
       />
     </div>
   );

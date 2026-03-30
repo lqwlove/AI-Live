@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 class EventType(Enum):
     CHAT_RECEIVED = "chat_received"
+    CHAT_TRANSLATION = "chat_translation"
     CHAT_FILTERED = "chat_filtered"
     AI_REPLY_START = "ai_reply_start"
     AI_REPLY_DONE = "ai_reply_done"
@@ -26,6 +27,8 @@ class EventType(Enum):
     CONNECTED = "connected"
     BGM_STARTED = "bgm_started"
     BGM_STOPPED = "bgm_stopped"
+    ANNOUNCE_START = "announce_start"
+    ANNOUNCE_DONE = "announce_done"
 
 
 @dataclass
@@ -49,7 +52,8 @@ class EventBus:
         self._subscribers: list[asyncio.Queue] = []
 
     def subscribe(self) -> asyncio.Queue:
-        q: asyncio.Queue[Event] = asyncio.Queue(maxsize=500)
+        # maxsize=0 表示无界，避免高负载时丢弃事件
+        q: asyncio.Queue[Event] = asyncio.Queue(maxsize=0)
         self._subscribers.append(q)
         return q
 

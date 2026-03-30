@@ -29,17 +29,13 @@ export function TriggerKeywords({ config, onChange }: Props) {
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-[var(--border-app)] px-5 pt-4 pb-3">
         <Filter size={16} className="text-[var(--accent-purple)]" />
-        <span className="text-sm font-semibold text-[var(--font-primary)]">
-          Message Filter / Trigger Words
-        </span>
-        <span className="ml-auto text-xs text-[var(--font-muted)]">
-          {keywords.length} keywords
-        </span>
+        <span className="text-sm font-semibold text-[var(--font-primary)]">弹幕过滤 / 触发词</span>
+        <span className="ml-auto text-xs text-[var(--font-muted)]">{keywords.length} 个关键词</span>
       </div>
 
       {/* Body */}
       <div className="flex flex-1 flex-col gap-3 overflow-auto px-5 pb-5">
-        <label className="text-xs font-medium text-[var(--font-secondary)]">Trigger Keywords</label>
+        <label className="text-xs font-medium text-[var(--font-secondary)]">触发关键词</label>
 
         {/* Tag cloud */}
         <div className="flex flex-wrap gap-2">
@@ -60,7 +56,7 @@ export function TriggerKeywords({ config, onChange }: Props) {
         <div className="flex gap-2">
           <input
             className="flex-1 rounded-md border border-[var(--border-app)] bg-[var(--input-bg)] px-3 py-2.5 text-[13px] text-[var(--font-primary)] outline-none focus:border-[var(--accent-purple)]"
-            placeholder="Type a keyword and press Add..."
+            placeholder="输入关键词后按回车或点击添加…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addKeyword()}
@@ -70,18 +66,18 @@ export function TriggerKeywords({ config, onChange }: Props) {
             className="flex items-center gap-1.5 rounded-md bg-[var(--accent-purple)] px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
           >
             <Plus size={14} />
-            Add
+            添加
           </button>
         </div>
 
         {/* Separator */}
         <hr className="border-[var(--border-app)]" />
-        <label className="text-xs font-semibold text-[var(--font-muted)]">Advanced Filters</label>
+        <label className="text-xs font-semibold text-[var(--font-muted)]">高级过滤</label>
 
         {/* Min / Max */}
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-[var(--font-secondary)]">Min Length</label>
+            <label className="text-xs font-medium text-[var(--font-secondary)]">最短字数</label>
             <input
               type="number"
               className="rounded-md border border-[var(--border-app)] bg-[var(--input-bg)] px-3 py-2.5 text-[13px] text-[var(--font-primary)] outline-none focus:border-[var(--accent-purple)]"
@@ -90,7 +86,7 @@ export function TriggerKeywords({ config, onChange }: Props) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-[var(--font-secondary)]">Max Length</label>
+            <label className="text-xs font-medium text-[var(--font-secondary)]">最长字数</label>
             <input
               type="number"
               className="rounded-md border border-[var(--border-app)] bg-[var(--input-bg)] px-3 py-2.5 text-[13px] text-[var(--font-primary)] outline-none focus:border-[var(--accent-purple)]"
@@ -102,7 +98,7 @@ export function TriggerKeywords({ config, onChange }: Props) {
 
         {/* Cooldown */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-[var(--font-secondary)]">Cooldown (seconds)</label>
+          <label className="text-xs font-medium text-[var(--font-secondary)]">同用户冷却（秒）</label>
           <input
             type="number"
             className="rounded-md border border-[var(--border-app)] bg-[var(--input-bg)] px-3 py-2.5 text-[13px] text-[var(--font-primary)] outline-none focus:border-[var(--accent-purple)]"

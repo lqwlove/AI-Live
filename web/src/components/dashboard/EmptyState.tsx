@@ -15,11 +15,9 @@ export function EmptyState() {
         style={{ gap: "var(--ds-empty-stack)" }}
       >
         <CirclePlay className="size-14 shrink-0 text-[var(--font-muted)]" strokeWidth={1.25} />
-        <h2 className="text-[20px] font-bold leading-tight text-[var(--font-primary)]">
-          No Active Session
-        </h2>
+        <h2 className="text-[20px] font-bold leading-tight text-[var(--font-primary)]">当前未开播</h2>
         <p className="max-w-[400px] text-center text-sm leading-normal text-[var(--font-muted)]">
-          Configure your platform settings and start the live assistant to begin monitoring chat.
+          请先在设置中配置平台，再启动直播助手以开始监听弹幕。
         </p>
         <div
           className="flex flex-wrap items-center justify-center"
@@ -33,7 +31,7 @@ export function EmptyState() {
             className="rounded-[8px] border-[var(--border-app)] bg-transparent text-sm font-medium leading-normal text-[var(--font-secondary)] hover:bg-[var(--bg-card-hover)]"
           >
             <Settings className="size-4 shrink-0" />
-            Go to Settings
+            前往设置
           </Button>
           <Button
             type="button"
@@ -42,7 +40,7 @@ export function EmptyState() {
             className="rounded-[8px] border-0 bg-gradient-to-b from-[var(--accent-purple)] to-[var(--accent-blue)] text-sm font-semibold leading-normal text-white shadow-none hover:opacity-90"
           >
             <Play className="size-4 shrink-0" />
-            Start Live Assistant
+            开始直播
           </Button>
         </div>
       </div>

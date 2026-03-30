@@ -35,7 +35,7 @@ export function SettingsPage() {
 
   if (!config) {
     return (
-      <div className="flex h-full items-center justify-center text-[var(--font-muted)]">Loading...</div>
+      <div className="flex h-full items-center justify-center text-[var(--font-muted)]">加载中…</div>
     );
   }
 
@@ -45,7 +45,7 @@ export function SettingsPage() {
         className="flex shrink-0 items-center"
         style={{ minHeight: "var(--ds-settings-header-h)", height: "var(--ds-settings-header-h)" }}
       >
-        <h1 className="text-2xl leading-none font-bold tracking-tight text-[var(--font-primary)]">Settings</h1>
+        <h1 className="text-2xl leading-none font-bold tracking-tight text-[var(--font-primary)]">设置</h1>
         <span className="min-w-0 flex-1" aria-hidden />
         <Button
           type="button"
@@ -55,7 +55,7 @@ export function SettingsPage() {
           className="box-border h-8 gap-1.5 rounded-md border-[var(--border-app)] bg-[var(--bg-card)] px-4 py-0 text-[13px] font-medium text-[var(--font-secondary)] hover:bg-[var(--bg-card-hover)]"
         >
           <Save className="size-3.5" />
-          {saving ? "Saving..." : "Save Config"}
+          {saving ? "保存中…" : "保存配置"}
         </Button>
       </header>
 

@@ -38,18 +38,24 @@ class BgmPlayRequest(BaseModel):
 @router.post("/play")
 async def play_bgm(req: BgmPlayRequest, request: Request):
     engine = request.app.state.session_manager.engine
-    if not engine.bgm:
-        raise HTTPException(status_code=400, detail="BGM 未启用，请在配置中开启 bgm.enabled")
+    if not engine.running:
+        raise HTTPException(status_code=400, detail="请先开播后再切换背景音乐")
+    player = engine.ensure_bgm_player()
+    if not player:
+        raise HTTPException(status_code=400, detail="当前无法播放背景音乐")
 
     file_path = None
     if req.file:
-        bgm_dir = engine.bgm.bgm_dir
-        file_path = os.path.join(bgm_dir, req.file)
+        safe_name = os.path.basename(req.file.strip())
+        if not safe_name:
+            raise HTTPException(status_code=400, detail="无效的文件名")
+        bgm_dir = player.bgm_dir
+        file_path = os.path.join(bgm_dir, safe_name)
         if not os.path.isfile(file_path):
-            raise HTTPException(status_code=404, detail=f"文件不存在: {req.file}")
+            raise HTTPException(status_code=404, detail=f"文件不存在: {safe_name}")
 
-    engine.bgm.play(file_path)
-    return engine.bgm.get_status()
+    player.play(file_path)
+    return player.get_status()
 
 
 @router.post("/stop")
@@ -67,7 +73,10 @@ class BgmVolumeRequest(BaseModel):
 @router.put("/volume")
 async def set_bgm_volume(req: BgmVolumeRequest, request: Request):
     engine = request.app.state.session_manager.engine
-    if not engine.bgm:
-        raise HTTPException(status_code=400, detail="BGM 未启用")
-    engine.bgm.set_volume(req.volume)
-    return engine.bgm.get_status()
+    if not engine.running:
+        raise HTTPException(status_code=400, detail="请先开播")
+    player = engine.ensure_bgm_player()
+    if not player:
+        raise HTTPException(status_code=400, detail="无法调整背景音乐")
+    player.set_volume(req.volume)
+    return player.get_status()

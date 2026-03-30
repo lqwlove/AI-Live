@@ -40,6 +40,7 @@ DEFAULT_CONFIG = {
         "max_history": 10,
         "multilang": False,
         "batch_interval": 5,
+        "translate_display": True,
     },
     "knowledge": {
         "enabled": True,
@@ -86,6 +87,13 @@ DEFAULT_CONFIG = {
     },
     "audio": {
         "device": "default",
+        "voice_volume": 1.0,
+    },
+    "announce": {
+        "items_file": "announcements.json",
+        "interval_seconds": 30.0,
+        "pause_on_any_chat": False,
+        "lang": "zh",
     },
     "bgm": {
         "enabled": False,

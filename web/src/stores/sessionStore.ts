@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import type { AIResponse, ChatMessage, Stats } from "@/types";
+import { DEBUG_WS } from "@/lib/debugFlags";
+
+function storeLog(...args: unknown[]) {
+  if (DEBUG_WS) console.info("[tk-live:store]", ...args);
+}
 
 interface SessionState {
   status: "idle" | "starting" | "running" | "stopping";
@@ -31,9 +36,12 @@ export const useSessionStore = create<SessionState>((set) => ({
   setPlatform: (p) => set({ platform: p }),
 
   addChat: (msg) =>
-    set((state) => ({
-      chatMessages: [...state.chatMessages.slice(-(MAX_MESSAGES - 1)), msg],
-    })),
+    set((state) => {
+      storeLog("addChat", { len: state.chatMessages.length, preview: msg.content.slice(0, 40) });
+      return {
+        chatMessages: [...state.chatMessages.slice(-(MAX_MESSAGES - 1)), msg],
+      };
+    }),
 
   addAIResponse: (resp) =>
     set((state) => ({

@@ -7,19 +7,19 @@ const STATUS_CONFIG: Record<
   { text: string; dotColor: string; textColor: string; bgColor: string }
 > = {
   speaking: {
-    text: "Playing",
+    text: "播放中",
     dotColor: "var(--success)",
     textColor: "var(--success)",
     bgColor: "#22C55E22",
   },
   generating: {
-    text: "Generating",
+    text: "生成中",
     dotColor: "var(--warning)",
     textColor: "var(--warning)",
     bgColor: "#F59E0B22",
   },
   done: {
-    text: "Queued",
+    text: "排队中",
     dotColor: "",
     textColor: "var(--font-muted)",
     bgColor: "#A1A1AA22",
@@ -49,7 +49,7 @@ export function AIResponsePanel() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const pending = useMemo(
-    () => responses.filter((r) => r.status === "generating" || r.status === "speaking").length,
+    () => responses.filter((r) => r.status === "speaking").length,
     [responses],
   );
 
@@ -61,13 +61,13 @@ export function AIResponsePanel() {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-[var(--border-app)] bg-[var(--bg-card)]">
       <div className="flex shrink-0 items-center gap-2 px-5 py-4">
         <Bot className="size-4 shrink-0 text-[var(--font-primary)]" strokeWidth={2} />
-        <span className="text-sm font-semibold text-[var(--font-primary)]">AI Response Queue</span>
+        <span className="text-sm font-semibold text-[var(--font-primary)]">AI 回复队列</span>
         <span className="min-w-0 flex-1" aria-hidden />
         <span
           className="rounded px-2 py-1 text-[11px] font-medium text-[var(--accent-purple)]"
           style={{ background: "#7C3AED22" }}
         >
-          {pending} pending
+          {pending} 条进行中
         </span>
       </div>
 
@@ -106,7 +106,7 @@ export function AIResponsePanel() {
                 <p className="text-[13px] leading-snug text-[var(--font-secondary)]">{resp.reply}</p>
               ) : resp.content ? (
                 <p className="text-[13px] text-[var(--font-muted)]">
-                  {resp.status === "done" ? "Waiting for AI response..." : resp.content}
+                  {resp.status === "done" ? "等待 AI 回复…" : resp.content}
                 </p>
               ) : null}
 

@@ -23,7 +23,7 @@ export function PlatformConfig({ config, onChange }: Props) {
     <div className="overflow-hidden rounded-[10px] border border-[var(--border-app)] bg-[var(--bg-card)]">
       <div className="flex items-center gap-2 px-5 pt-4 pb-3">
         <Globe className="size-4 text-[var(--font-primary)]" strokeWidth={2} />
-        <span className="text-sm font-semibold text-[var(--font-primary)]">Platform Configuration</span>
+        <span className="text-sm font-semibold text-[var(--font-primary)]">平台配置</span>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Platform)} className="gap-0">
@@ -68,24 +68,24 @@ function PlatformTabBody({
     <div className="flex flex-col gap-4">
       {tab === "youtube" && (
         <>
-          <ConfigField label="Video ID" value={section.video_id as string} onChange={(v) => set("video_id", v)} />
-          <ConfigField label="Channel ID" value={section.channel_id as string} onChange={(v) => set("channel_id", v)} />
-          <ConfigField label="API Key" value={section.api_key as string} onChange={(v) => set("api_key", v)} />
-          <ToggleField label="Auto Reply" checked={section.auto_reply as boolean} onChange={(v) => set("auto_reply", v)} />
+          <ConfigField label="视频 ID（Video ID）" value={section.video_id as string} onChange={(v) => set("video_id", v)} />
+          <ConfigField label="频道 ID（Channel ID）" value={section.channel_id as string} onChange={(v) => set("channel_id", v)} />
+          <ConfigField label="API 密钥" value={section.api_key as string} onChange={(v) => set("api_key", v)} />
+          <ToggleField label="自动回复聊天" checked={section.auto_reply as boolean} onChange={(v) => set("auto_reply", v)} />
         </>
       )}
       {tab === "douyin" && (
         <>
-          <ConfigField label="Room ID" value={section.room_id as string} onChange={(v) => set("room_id", v)} />
-          <ConfigField label="Live URL" value={section.live_url as string} onChange={(v) => set("live_url", v)} />
+          <ConfigField label="房间 ID" value={section.room_id as string} onChange={(v) => set("room_id", v)} />
+          <ConfigField label="直播链接" value={section.live_url as string} onChange={(v) => set("live_url", v)} />
           <ConfigField label="Cookie" value={section.cookie as string} onChange={(v) => set("cookie", v)} />
         </>
       )}
       {tab === "tiktok" && (
         <>
-          <ConfigField label="Username" value={section.unique_id as string} onChange={(v) => set("unique_id", v)} />
+          <ConfigField label="用户名（不带 @）" value={section.unique_id as string} onChange={(v) => set("unique_id", v)} />
           <ConfigField
-            label="Proxy"
+            label="代理"
             value={section.proxy as string}
             onChange={(v) => set("proxy", v)}
             placeholder="http://127.0.0.1:7890"

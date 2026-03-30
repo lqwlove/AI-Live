@@ -55,7 +55,7 @@ export function ProductsPage() {
         className="flex shrink-0 items-center"
         style={{ minHeight: "var(--ds-settings-header-h)", height: "var(--ds-settings-header-h)" }}
       >
-        <h1 className="text-2xl leading-none font-bold tracking-tight text-[var(--font-primary)]">Products</h1>
+        <h1 className="text-2xl leading-none font-bold tracking-tight text-[var(--font-primary)]">商品库</h1>
         <span className="min-w-0 flex-1" aria-hidden />
         <Button
           type="button"
@@ -64,7 +64,7 @@ export function ProductsPage() {
           className="box-border h-8 gap-1.5 rounded-md border-[var(--border-app)] bg-[var(--bg-card)] px-4 py-0 text-[13px] font-medium text-[var(--font-secondary)] hover:bg-[var(--bg-card-hover)]"
         >
           <Plus className="size-3.5" />
-          Add Product
+          添加商品
         </Button>
       </header>
 
@@ -75,8 +75,8 @@ export function ProductsPage() {
             <div className="flex flex-1 items-center justify-center text-[var(--font-muted)]">
               <div className="text-center">
                 <Package className="mx-auto mb-3 size-10 opacity-40" />
-                <p className="text-sm">No products yet</p>
-                <p className="mt-1 text-xs text-[var(--font-muted)]">Add products to enable AI product recommendations</p>
+                <p className="text-sm">暂无商品</p>
+                <p className="mt-1 text-xs text-[var(--font-muted)]">添加商品后，AI 可根据关键词推荐讲解</p>
               </div>
             </div>
           )}
@@ -89,7 +89,7 @@ export function ProductsPage() {
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-[var(--font-primary)]">{p.name}</span>
                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${p.active ? "bg-[var(--success)]/15 text-[var(--success)]" : "bg-[var(--font-muted)]/15 text-[var(--font-muted)]"}`}>
-                    {p.active ? "On Sale" : "Off"}
+                    {p.active ? "在售" : "下架"}
                   </span>
                 </div>
                 <div className="mt-1 flex items-baseline gap-2">
@@ -133,24 +133,24 @@ export function ProductsPage() {
           <div className="rounded-[10px] border border-[var(--border-app)] bg-[var(--bg-card)] px-5 pt-4 pb-5">
             <div className="flex items-center gap-2 mb-3">
               <Search size={16} className="text-[var(--accent-purple)]" />
-              <span className="text-sm font-semibold text-[var(--font-primary)]">Test Match</span>
+              <span className="text-sm font-semibold text-[var(--font-primary)]">匹配测试</span>
             </div>
             <div className="flex gap-2">
               <input
                 className="min-w-0 flex-1 rounded-md border border-[var(--border-app)] bg-[var(--input-bg)] px-3 py-2 text-[13px] text-[var(--font-primary)] outline-none focus:border-[var(--accent-purple)]"
-                placeholder="Enter danmaku text..."
+                placeholder="输入模拟弹幕内容…"
                 value={testText}
                 onChange={(e) => setTestText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleTest()}
               />
               <Button type="button" variant="outline" onClick={handleTest} className="h-auto shrink-0 rounded-md border-[var(--border-app)] bg-[var(--bg-card)] px-3 text-[13px]">
-                Test
+                测试
               </Button>
             </div>
             {matchResult !== null && (
               <div className="mt-3">
                 {matchResult.length === 0 ? (
-                  <p className="text-xs text-[var(--font-muted)]">No products matched</p>
+                  <p className="text-xs text-[var(--font-muted)]">未匹配到商品</p>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {matchResult.map((p) => (
@@ -170,27 +170,35 @@ export function ProductsPage() {
             <div className="rounded-[10px] border border-[var(--border-app)] bg-[var(--bg-card)] px-5 pt-4 pb-5">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-semibold text-[var(--font-primary)]">
-                  {editing.id ? "Edit Product" : "New Product"}
+                  {editing.id ? "编辑商品" : "新建商品"}
                 </span>
                 <button type="button" onClick={() => setEditing(null)} className="rounded-md p-1 text-[var(--font-muted)] hover:bg-[var(--bg-card-hover)]">
                   <X className="size-4" />
                 </button>
               </div>
               <div className="flex flex-col gap-3">
-                <FormField label="Name" value={editing.name ?? ""} onChange={(v) => setEditing({ ...editing, name: v })} />
+                <FormField label="名称" value={editing.name ?? ""} onChange={(v) => setEditing({ ...editing, name: v })} />
                 <div className="grid grid-cols-2 gap-3">
-                  <FormField label="Price" value={String(editing.price ?? 0)} onChange={(v) => setEditing({ ...editing, price: Number(v) || 0 })} />
-                  <FormField label="Original Price" value={String(editing.original_price ?? "")} onChange={(v) => setEditing({ ...editing, original_price: v ? Number(v) : null })} />
+                  <FormField label="价格" value={String(editing.price ?? 0)} onChange={(v) => setEditing({ ...editing, price: Number(v) || 0 })} />
+                  <FormField label="原价（可选）" value={String(editing.original_price ?? "")} onChange={(v) => setEditing({ ...editing, original_price: v ? Number(v) : null })} />
                 </div>
-                <FormField label="Description" value={editing.description ?? ""} onChange={(v) => setEditing({ ...editing, description: v })} />
-                <FormField label="Keywords (comma separated)" value={(editing.keywords ?? []).join(", ")} onChange={(v) => setEditing({ ...editing, keywords: v.split(",").map((s) => s.trim()).filter(Boolean) })} />
-                <FormField label="Selling Points (comma separated)" value={(editing.selling_points ?? []).join(", ")} onChange={(v) => setEditing({ ...editing, selling_points: v.split(",").map((s) => s.trim()).filter(Boolean) })} />
+                <FormField label="描述" value={editing.description ?? ""} onChange={(v) => setEditing({ ...editing, description: v })} />
+                <FormField
+                  label="关键词（英文逗号分隔）"
+                  value={(editing.keywords ?? []).join(", ")}
+                  onChange={(v) => setEditing({ ...editing, keywords: v.split(",").map((s) => s.trim()).filter(Boolean) })}
+                />
+                <FormField
+                  label="卖点（英文逗号分隔）"
+                  value={(editing.selling_points ?? []).join(", ")}
+                  onChange={(v) => setEditing({ ...editing, selling_points: v.split(",").map((s) => s.trim()).filter(Boolean) })}
+                />
                 <Button
                   type="button"
                   onClick={handleSave}
                   className="h-9 w-full rounded-md border-0 bg-gradient-to-b from-[var(--accent-purple)] to-[var(--accent-blue)] text-[13px] font-semibold text-white hover:opacity-90"
                 >
-                  Save
+                  保存
                 </Button>
               </div>
             </div>

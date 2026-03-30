@@ -13,7 +13,7 @@ function platformBadgeLabel(platform: string | null) {
   if (platform === "youtube") return "YouTube";
   if (platform === "douyin") return "Douyin";
   if (platform === "tiktok") return "TikTok";
-  return "Live";
+  return "直播中";
 }
 
 export function ChatPanel() {
@@ -23,7 +23,7 @@ export function ChatPanel() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+  }, [messages]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-[var(--border-app)] bg-[var(--bg-card)]">
@@ -31,7 +31,7 @@ export function ChatPanel() {
         className="box-border flex shrink-0 items-center gap-2 px-5 py-4"
       >
         <MessageSquare className="size-4 shrink-0 text-[var(--font-primary)]" strokeWidth={2} />
-        <span className="text-sm font-semibold text-[var(--font-primary)]">Live Chat Stream</span>
+        <span className="text-sm font-semibold text-[var(--font-primary)]">实时弹幕</span>
         <span className="min-w-0 flex-1" aria-hidden />
         <Badge
           variant="secondary"

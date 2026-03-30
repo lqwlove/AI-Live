@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Settings, Play, Square, Package } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { LayoutDashboard, Settings, Play, Square, Package, Megaphone } from "lucide-react";
 import { useSessionStore } from "@/stores/sessionStore";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -10,13 +11,14 @@ import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS: {
   to: string;
-  icon: typeof LayoutDashboard;
+  icon: LucideIcon;
   label: string;
   end?: boolean;
 }[] = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
-  { to: "/products", icon: Package, label: "Products" },
-  { to: "/settings", icon: Settings, label: "Settings" },
+  { to: "/", icon: LayoutDashboard, label: "控制台", end: true },
+  { to: "/products", icon: Package, label: "商品库" },
+  { to: "/announcements", icon: Megaphone, label: "播报文案" },
+  { to: "/settings", icon: Settings, label: "设置" },
 ];
 
 const PLATFORMS: { id: Platform; label: string }[] = [
@@ -47,7 +49,7 @@ export function Sidebar() {
           <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-b from-[var(--accent-purple)] to-[var(--accent-blue)]">
             <span className="text-[13px] font-bold text-white">AI</span>
           </div>
-          <span className="text-base font-bold text-[var(--font-primary)]">AI Live</span>
+          <span className="text-base font-bold text-[var(--font-primary)]">直播助手</span>
         </div>
 
         {/* pen：Logo 下沿与 nav 容器顶对齐，nav 内 padding-top 20px */}
@@ -97,7 +99,7 @@ export function Sidebar() {
           style={{ paddingTop: "var(--ds-nav-section-pt)" }}
         >
           <span className="text-[11px] font-semibold tracking-[0.1em] text-[var(--font-muted)]">
-            PLATFORMS
+            平台
           </span>
           {PLATFORMS.map((p) => {
             const live = status === "running" && platform === p.id;
@@ -128,7 +130,7 @@ export function Sidebar() {
             }}
           >
             <Square className="size-3.5" />
-            Stop Session
+            停止直播
           </Button>
         ) : (
           <Button
@@ -138,7 +140,7 @@ export function Sidebar() {
             className="w-full rounded-lg border-0 bg-gradient-to-b from-[var(--accent-purple)] to-[var(--accent-blue)] text-[13px] font-semibold leading-normal text-white shadow-none hover:opacity-90"
           >
             <Play className="size-4" />
-            Start Live Assistant
+            开始直播
           </Button>
         )}
       </aside>

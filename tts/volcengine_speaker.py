@@ -111,27 +111,70 @@ class VolcengineSpeaker:
                 return ""
 
             audio_chunks: list[bytes] = []
+            raw_samples: list[str] = []
             for line in resp.iter_lines():
                 if not line:
+                    continue
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8", errors="replace").strip()
+                else:
+                    line = str(line).strip()
+                if not line:
+                    continue
+                # SSE / 部分网关会在每行前加 data:
+                if line.startswith("data:"):
+                    line = line[5:].strip()
+                if not line or line == "[DONE]":
                     continue
                 try:
                     data = json.loads(line)
                 except json.JSONDecodeError:
+                    if len(raw_samples) < 3:
+                        raw_samples.append(line[:200])
                     continue
 
                 code = data.get("code", -1)
-                if code == 0 and data.get("data"):
-                    audio_chunks.append(base64.b64decode(data["data"]))
-                elif code == 20000000:
+                # 部分返回里 code 为字符串
+                try:
+                    code_int = int(code)
+                except (TypeError, ValueError):
+                    code_int = -1
+
+                payload = data.get("data")
+                if code_int == 0 and payload:
+                    if isinstance(payload, str):
+                        try:
+                            audio_chunks.append(base64.b64decode(payload))
+                        except Exception:
+                            if len(raw_samples) < 3:
+                                raw_samples.append(f"(bad b64) {line[:200]}")
+                    elif isinstance(payload, dict) and payload.get("audio"):
+                        try:
+                            audio_chunks.append(base64.b64decode(payload["audio"]))
+                        except Exception:
+                            pass
+                elif code_int == 20000000:
                     break
-                elif code not in (0, 20000000):
-                    msg = data.get("message", "")
+                elif code_int not in (0, 20000000):
+                    msg = data.get("message", data.get("msg", ""))
                     if msg:
                         logger.error(f"火山 TTS 业务错误: code={code}, msg={msg}")
                         return ""
+                    if len(raw_samples) < 3:
+                        raw_samples.append(line[:300])
 
             if not audio_chunks:
-                logger.error("火山 TTS 未返回音频数据")
+                hint = (
+                    f" resource_id={self.resource_id}, speaker={self.speaker_id}。"
+                    "请确认二者在控制台属于同一条产品线；若仍失败，查看下行是否为流式 JSON。"
+                )
+                if raw_samples:
+                    logger.error(
+                        "火山 TTS 未返回音频数据（未解析到 code=0 的音频分片）。"
+                        f"{hint} 原始行片段: {raw_samples!r}"
+                    )
+                else:
+                    logger.error("火山 TTS 未返回音频数据（响应体可能为空或非预期格式）。" + hint)
                 return ""
 
             with open(cache_path, "wb") as f:
