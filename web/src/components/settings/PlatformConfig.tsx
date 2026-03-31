@@ -71,6 +71,22 @@ function PlatformTabBody({
           <ConfigField label="视频 ID（Video ID）" value={section.video_id as string} onChange={(v) => set("video_id", v)} />
           <ConfigField label="频道 ID（Channel ID）" value={section.channel_id as string} onChange={(v) => set("channel_id", v)} />
           <ConfigField label="API 密钥" value={section.api_key as string} onChange={(v) => set("api_key", v)} />
+          <ConfigField
+            label="聊天预热（秒）"
+            value={
+              section.chat_warmup_seconds != null && section.chat_warmup_seconds !== ""
+                ? String(section.chat_warmup_seconds)
+                : "2"
+            }
+            onChange={(v) => {
+              const n = parseFloat(v);
+              set("chat_warmup_seconds", Number.isFinite(n) ? n : 2);
+            }}
+            placeholder="2"
+          />
+          <p className="text-[11px] leading-relaxed text-[var(--font-muted)]">
+            首次连接 gRPC 后 N 秒内不向上层派发文字聊天，用于跳过历史积压；设为 0 关闭。
+          </p>
           <ToggleField label="自动回复聊天" checked={section.auto_reply as boolean} onChange={(v) => set("auto_reply", v)} />
         </>
       )}

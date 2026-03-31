@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
         "client_secrets_file": "",
         "auto_reply": False,
         "reply_prefix": "",
+        "chat_warmup_seconds": 2.0,
     },
     "ai": {
         "api_key": "",
@@ -41,6 +42,7 @@ DEFAULT_CONFIG = {
         "multilang": False,
         "batch_interval": 5,
         "translate_display": True,
+        "free_reply": False,
     },
     "knowledge": {
         "enabled": True,

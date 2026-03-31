@@ -8,6 +8,9 @@ interface Props {
 
 export function TriggerKeywords({ config, onChange }: Props) {
   const filter = (config.filter ?? {}) as Record<string, unknown>;
+  const ai = (config.ai ?? {}) as Record<string, unknown>;
+  /** 与 ai.free_reply 相反：开关打开 = 必须命中关键词 */
+  const requireKeywordTrigger = !(ai.free_reply as boolean);
   const keywords = (filter.keywords ?? []) as string[];
   const [input, setInput] = useState("");
 
@@ -35,6 +38,28 @@ export function TriggerKeywords({ config, onChange }: Props) {
 
       {/* Body */}
       <div className="flex flex-1 flex-col gap-3 overflow-auto px-5 pb-5">
+        <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-[13px] font-medium text-[var(--font-primary)]">需关键词触发</span>
+            <span className="text-[11px] text-[var(--font-muted)]">
+              关闭后无需命中关键词，只要满足下方长度与同用户冷却即参与 AI 批量回复
+            </span>
+          </div>
+          <button
+            type="button"
+            aria-label="需关键词触发"
+            onClick={() =>
+              onChange("ai", { free_reply: requireKeywordTrigger })
+            }
+            className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${requireKeywordTrigger ? "bg-[var(--accent-purple)]" : "bg-[var(--font-muted)]"}`}
+          >
+            <div
+              className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${requireKeywordTrigger ? "left-[18px]" : "left-0.5"}`}
+            />
+          </button>
+        </div>
+
+        <hr className="border-[var(--border-app)]" />
         <label className="text-xs font-medium text-[var(--font-secondary)]">触发关键词</label>
 
         {/* Tag cloud */}

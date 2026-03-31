@@ -32,7 +32,9 @@ class MessageFilter:
         self.cooldown = cooldown
         self._last_reply_time: dict[str, float] = {}
 
-    def should_reply(self, user_id: str, content: str) -> bool:
+    def should_reply(
+        self, user_id: str, content: str, *, require_keywords: bool = True
+    ) -> bool:
         if len(content) < self.min_length or len(content) > self.max_length:
             logger.debug(
                 f"[Filter] 长度不符: len={len(content)}, 范围=[{self.min_length}, {self.max_length}]"
@@ -46,6 +48,11 @@ class MessageFilter:
                 f"[Filter] 冷却中: user={user_id}, 距上次={now - last_time:.1f}s < {self.cooldown}s"
             )
             return False
+
+        if not require_keywords:
+            self._last_reply_time[user_id] = now
+            logger.debug("[Filter] 自由回复模式 → 通过（仅长度/冷却）")
+            return True
 
         matched = [kw for kw in self.keywords if kw in content]
         if matched:

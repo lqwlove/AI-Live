@@ -40,11 +40,13 @@ class YouTubeDanmakuClient:
         channel_id: str = "",
         api_key: str = "",
         client_secrets_file: str = "",
+        chat_warmup_seconds: float = 0.0,
     ):
         self.video_id = video_id
         self.channel_id = channel_id
         self.api_key = api_key
         self.client_secrets_file = client_secrets_file
+        self._chat_warmup_seconds = max(0.0, float(chat_warmup_seconds or 0.0))
         self._callbacks: dict[str, list[Callable]] = {}
         self._running = False
         self._youtube = None
@@ -53,6 +55,7 @@ class YouTubeDanmakuClient:
         self._seen_msg_ids: set[str] = set()
         self._next_page_token: str | None = None
         self._readonly = True
+        self._chat_emit_deadline: float | None = None
 
     @property
     def can_send(self) -> bool:
@@ -273,6 +276,17 @@ class YouTubeDanmakuClient:
 
                     if first_connect:
                         logger.info("gRPC 流式连接已建立，开始接收消息...")
+                        if self._chat_warmup_seconds > 0:
+                            self._chat_emit_deadline = (
+                                time.monotonic() + self._chat_warmup_seconds
+                            )
+                            logger.info(
+                                "YouTube: 开播预热 %.1fs，此期间不派发历史积压聊天；"
+                                "可在配置 youtube.chat_warmup_seconds 调整，0 关闭",
+                                self._chat_warmup_seconds,
+                            )
+                        else:
+                            self._chat_emit_deadline = None
                         first_connect = False
                     else:
                         logger.debug("gRPC 流自动续连")
@@ -361,6 +375,11 @@ class YouTubeDanmakuClient:
 
         if msg_type == Type.TEXT_MESSAGE_EVENT:
             text = snippet.text_message_details.message_text
+            if (
+                self._chat_emit_deadline is not None
+                and time.monotonic() < self._chat_emit_deadline
+            ):
+                return
             self._emit(
                 "chat",
                 {

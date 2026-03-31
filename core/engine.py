@@ -83,6 +83,7 @@ class LiveEngine:
         self.announce_hold = False
         self._voice_lock: asyncio.Lock | None = None
         self._to_zh = None
+        self._translation_tasks: set[asyncio.Task] = set()
 
     def _init_components(self, platform: str, **kwargs):
         """Initialise AI, TTS, filter, player and the danmaku client."""
@@ -111,6 +112,9 @@ class LiveEngine:
                 channel_id=channel_id,
                 api_key=api_key,
                 client_secrets_file=client_secrets,
+                chat_warmup_seconds=float(
+                    yt_cfg.get("chat_warmup_seconds", 2.0) or 0.0
+                ),
             )
             self._auto_reply_chat = yt_cfg.get("auto_reply", False)
             self._reply_prefix = yt_cfg.get("reply_prefix", "")
@@ -260,6 +264,8 @@ class LiveEngine:
     # ---- Event callbacks ------------------------------------------------
 
     def _on_chat(self, data: dict):
+        if not self.running:
+            return
         user = data.get("user", "未知用户")
         content = data.get("content", "")
         user_id = str(data.get("user_id", ""))
@@ -292,14 +298,21 @@ class LiveEngine:
         if pause_any:
             self.announce_hold = True
 
-        if self.msg_filter and self.msg_filter.should_reply(user_id, content):
+        require_keywords = not ai_cfg.get("free_reply", False)
+        if self.msg_filter and self.msg_filter.should_reply(
+            user_id, content, require_keywords=require_keywords
+        ):
+            mode = "触发词" if require_keywords else "自由回复"
             logger.info(
-                f"✅ 触发词匹配 [{user}]: {content} → 加入缓冲区 (buffer={self.comment_buffer.size + 1})"
+                f"✅ [{mode}] [{user}]: {content} → 加入缓冲区 (buffer={self.comment_buffer.size + 1})"
             )
             self.comment_buffer.append(ChatTask(user=user, content=content))
             self.announce_hold = True
         else:
-            logger.info(f"⏭️ 跳过 [{user}]: {content}（未匹配触发词）")
+            if require_keywords:
+                logger.info(f"⏭️ 跳过 [{user}]: {content}（未匹配触发词或长度/冷却）")
+            else:
+                logger.info(f"⏭️ 跳过 [{user}]: {content}（长度或冷却限制）")
 
     def _schedule_chat_received_with_translation(
         self, payload: dict, ts: float, content: str
@@ -318,9 +331,13 @@ class LiveEngine:
                 zh = await loop.run_in_executor(
                     self.executor, self._to_zh.translate, content
                 )
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.debug("弹幕翻译任务失败: %s", e)
                 zh = ""
+            if not self.running:
+                return
             out["content"] = append_zh_in_parens(content, zh) if zh else content
             if not self.running:
                 return
@@ -335,7 +352,11 @@ class LiveEngine:
             )
 
         def _cb():
-            asyncio.create_task(_run())
+            if not self.running:
+                return
+            task = asyncio.create_task(_run())
+            self._translation_tasks.add(task)
+            task.add_done_callback(self._translation_tasks.discard)
 
         self._loop.call_soon_threadsafe(_cb)
 
@@ -521,6 +542,10 @@ class LiveEngine:
                 )
                 ai_ms = int((time.time() - t0) * 1000)
 
+                if not self.running:
+                    logger.debug("会话已停止，跳过本次批量后续步骤（AI 请求可能仍在收尾）")
+                    continue
+
                 if not reply:
                     logger.warning("🤖 [AI] 批量回复为空，跳过")
                     continue
@@ -539,6 +564,10 @@ class LiveEngine:
                     reply_zh = await loop.run_in_executor(
                         self.executor, self._to_zh.translate, reply
                     )
+
+                if not self.running:
+                    logger.debug("会话已停止，跳过回复翻译与 TTS")
+                    continue
 
                 reply_for_ui = (
                     append_zh_in_parens(reply, reply_zh) if reply_zh else reply
@@ -694,6 +723,13 @@ class LiveEngine:
         if not self.running:
             return
         self.running = False
+
+        pending_tr = list(self._translation_tasks)
+        for t in pending_tr:
+            t.cancel()
+        if pending_tr:
+            await asyncio.gather(*pending_tr, return_exceptions=True)
+
         if self.bgm and self.bgm.is_playing:
             self.bgm.stop()
             await self.event_bus.emit(Event(EventType.BGM_STOPPED, {}))
@@ -708,7 +744,10 @@ class LiveEngine:
                     pass
         self._announce_task = None
         if self.executor:
-            self.executor.shutdown(wait=False)
+            try:
+                self.executor.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                self.executor.shutdown(wait=False)
             self.executor = None
         self.platform = None
         self.start_time = None

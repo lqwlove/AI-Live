@@ -85,6 +85,9 @@ class LiveAssistant:
                 channel_id=channel_id,
                 api_key=api_key,
                 client_secrets_file=client_secrets,
+                chat_warmup_seconds=float(
+                    yt_cfg.get("chat_warmup_seconds", 2.0) or 0.0
+                ),
             )
             self._auto_reply_chat = yt_cfg.get("auto_reply", False)
             self._reply_prefix = yt_cfg.get("reply_prefix", "")
@@ -196,13 +199,19 @@ class LiveAssistant:
 
         logger.info(f"💬 [{user}]: {content}")
 
-        if self.msg_filter.should_reply(user_id, content):
+        require_keywords = not self.config.get("ai").get("free_reply", False)
+        if self.msg_filter.should_reply(
+            user_id, content, require_keywords=require_keywords
+        ):
             logger.info(
                 f"✅ [{user}]: {content} → 加入缓冲区 (buffer={self.comment_buffer.size + 1})"
             )
             self.comment_buffer.append(ChatTask(user=user, content=content))
         else:
-            logger.info(f"⏭️ 跳过 [{user}]: {content}（未匹配触发词）")
+            logger.info(
+                f"⏭️ 跳过 [{user}]: {content}"
+                + ("（未匹配触发词或长度/冷却）" if require_keywords else "（长度或冷却限制）")
+            )
 
     def _on_like(self, data: dict):
         user = data.get("user", "未知用户")
