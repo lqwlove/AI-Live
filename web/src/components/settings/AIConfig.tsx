@@ -15,9 +15,11 @@ export function AIConfig({ config, onChange }: Props) {
         <Bot size={16} className="text-[var(--accent-purple)]" />
         <span className="text-sm font-semibold text-[var(--font-primary)]">AI 配置</span>
       </div>
-      <Field label="API 密钥" value={(ai.api_key as string) ?? ""} onChange={(v) => set("api_key", v)} password />
+      <p className="text-[11px] leading-relaxed text-[var(--font-muted)]">
+        API 密钥与 Base URL 仅在服务端 <code className="rounded bg-[var(--input-bg)] px-1">internal_credentials.py</code> 或环境变量{" "}
+        <code className="rounded bg-[var(--input-bg)] px-1">TK_LIVE_AI_*</code> 中配置。
+      </p>
       <Field label="模型" value={ai.model as string} onChange={(v) => set("model", v)} />
-      <Field label="接口地址（Base URL）" value={ai.base_url as string} onChange={(v) => set("base_url", v)} />
       <div className="flex flex-col gap-1.5">
         <label className="text-xs font-medium text-[var(--font-secondary)]">系统提示词</label>
         <textarea

@@ -7,12 +7,10 @@ interface Props {
 
 export function TTSConfig({ config, onChange }: Props) {
   const tts = (config.tts ?? {}) as Record<string, unknown>;
-  const volc = (config.volcengine ?? {}) as Record<string, unknown>;
   const engine = (tts.engine as string) ?? "edge-tts";
   const isVolc = engine === "volcengine";
 
   const setTts = (key: string, value: unknown) => onChange("tts", { [key]: value });
-  const setVolc = (key: string, value: unknown) => onChange("volcengine", { [key]: value });
 
   const rateNum = parseInt((tts.rate as string ?? "+0%").replace("%", ""), 10);
   const volumeNum = parseInt((tts.volume as string ?? "+0%").replace("%", ""), 10);
@@ -39,12 +37,10 @@ export function TTSConfig({ config, onChange }: Props) {
       </div>
 
       {isVolc ? (
-        <>
-          <Field label="Speaker ID (音色 ID)" value={volc.speaker_id as string} onChange={(v) => setVolc("speaker_id", v)} />
-          <Field label="应用 ID（App ID）" value={volc.app_id as string} onChange={(v) => setVolc("app_id", v)} />
-          <Field label="访问令牌（Access Token）" value={volc.access_token as string} onChange={(v) => setVolc("access_token", v)} type="password" />
-          <Field label="资源 ID（Resource ID）" value={volc.resource_id as string} onChange={(v) => setVolc("resource_id", v)} />
-        </>
+        <p className="text-[11px] leading-relaxed text-[var(--font-muted)]">
+          火山引擎的 App ID、Access Token、音色 ID 等仅在服务端 <code className="rounded bg-[var(--input-bg)] px-1">internal_credentials.py</code>{" "}
+          或对应环境变量中配置，不在此页面填写。
+        </p>
       ) : (
         <Field label="音色（Voice）" value={tts.voice as string} onChange={(v) => setTts("voice", v)} />
       )}

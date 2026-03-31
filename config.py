@@ -24,8 +24,6 @@ DEFAULT_CONFIG = {
         "chat_warmup_seconds": 2.0,
     },
     "ai": {
-        "api_key": "",
-        "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
         "engine": "agent",
         "system_prompt": (
@@ -55,13 +53,6 @@ DEFAULT_CONFIG = {
         "rate": "+0%",
         "volume": "+0%",
         "output_dir": "audio_cache",
-    },
-    "volcengine": {
-        "api_key": "",
-        "app_id": "",
-        "access_token": "",
-        "speaker_id": "",
-        "resource_id": "seed-icl-2.0",
     },
     "filter": {
         "keywords": [
@@ -123,6 +114,20 @@ class Config:
             with open(config_path, "r", encoding="utf-8") as f:
                 user_config = yaml.safe_load(f) or {}
             self._deep_merge(self._data, user_config)
+        self._apply_internal_credentials()
+
+    def _apply_internal_credentials(self):
+        """AI 密钥 / Base URL 与火山引擎配置仅从 internal_credentials 注入，不由 yaml 或 Web 覆盖。"""
+        from internal_credentials import (
+            get_ai_api_key,
+            get_ai_base_url,
+            get_volcengine_config,
+        )
+
+        ai = self._data.setdefault("ai", {})
+        ai["api_key"] = get_ai_api_key()
+        ai["base_url"] = get_ai_base_url()
+        self._data["volcengine"] = get_volcengine_config()
 
     def _deep_merge(self, base, override, *, skip_masked_secrets: bool = False):
         for key, value in override.items():
@@ -159,8 +164,14 @@ class Config:
         return copy.deepcopy(self._data)
 
     def get_sanitized(self) -> dict:
-        """Return config with sensitive values masked."""
-        return self._mask(copy.deepcopy(self._data))
+        """Return config for Web UI：脱敏，且不包含仅服务端持有的 AI 密钥与火山配置。"""
+        d = self._mask(copy.deepcopy(self._data))
+        d.pop("volcengine", None)
+        ai = d.get("ai")
+        if isinstance(ai, dict):
+            ai.pop("api_key", None)
+            ai.pop("base_url", None)
+        return d
 
     def _mask(self, obj, _key=""):
         if isinstance(obj, dict):
@@ -171,17 +182,35 @@ class Config:
 
     def update(self, data: dict):
         """Merge *data* into current config and persist to disk."""
-        self._deep_merge(self._data, data, skip_masked_secrets=True)
+        payload = copy.deepcopy(data)
+        payload.pop("volcengine", None)
+        if "ai" in payload and isinstance(payload["ai"], dict):
+            payload["ai"] = {
+                k: v for k, v in payload["ai"].items() if k not in ("api_key", "base_url")
+            }
+        self._deep_merge(self._data, payload, skip_masked_secrets=True)
+        self._apply_internal_credentials()
         self.save(self._path)
+
+    def _persistable_config_copy(self) -> dict:
+        """写入 yaml 时去掉仅存在于内存、由 internal_credentials 提供的字段。"""
+        to_write = copy.deepcopy(self._data)
+        if "ai" in to_write and isinstance(to_write["ai"], dict):
+            to_write["ai"] = {
+                k: v for k, v in to_write["ai"].items() if k not in ("api_key", "base_url")
+            }
+        to_write.pop("volcengine", None)
+        return to_write
 
     def save(self, path: str | None = None):
         path = path or self._path
+        to_write = self._persistable_config_copy()
         with open(path, "w", encoding="utf-8") as f:
-            yaml.dump(self._data, f, allow_unicode=True, default_flow_style=False)
+            yaml.dump(to_write, f, allow_unicode=True, default_flow_style=False)
 
     def save_template(self, path="config.yaml"):
         with open(path, "w", encoding="utf-8") as f:
-            yaml.dump(self._data, f, allow_unicode=True, default_flow_style=False)
+            yaml.dump(self._persistable_config_copy(), f, allow_unicode=True, default_flow_style=False)
         print(f"配置模板已保存到 {path}")
 
     def validate_platform(self, platform: str) -> dict:

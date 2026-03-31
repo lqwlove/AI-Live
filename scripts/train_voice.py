@@ -12,7 +12,7 @@
 说明:
   1. 准备一段 10~60 秒的清晰人声录音（WAV / MP3）
   2. 运行本脚本完成声音复刻训练
-  3. 训练成功后获得 speaker_id，写入 config.yaml 的 volcengine.speaker_id
+  3. 训练成功后获得 speaker_id，写入 internal_credentials.py 的 _DEFAULT_VOLCENGINE["speaker_id"]（或环境变量 TK_LIVE_VOLCENGINE_SPEAKER_ID）
   4. 训练是一次性操作，之后在直播中直接使用合成接口
 """
 
@@ -86,7 +86,7 @@ def train(app_id: str, access_token: str, audio_path: str, speaker_name: str):
             speaker_id = status["data"]["speaker_id"]
             logger.info("=" * 50)
             logger.info(f"训练完成！speaker_id = {speaker_id}")
-            logger.info("请将此 speaker_id 填写到 config.yaml 的 volcengine.speaker_id 中")
+            logger.info("请将此 speaker_id 填写到 internal_credentials.py 的 _DEFAULT_VOLCENGINE[\"speaker_id\"]（或环境变量 TK_LIVE_VOLCENGINE_SPEAKER_ID）")
             logger.info("=" * 50)
             return speaker_id
         elif state in ("failed", "error"):
