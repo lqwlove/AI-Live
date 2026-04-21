@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Play, MonitorPlay, Music, Music2, Disc3 } from "lucide-react";
+import { Play, MonitorPlay, Music2, Globe, Disc3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useSessionStore } from "@/stores/sessionStore";
@@ -27,8 +27,8 @@ const PLATFORMS: {
   iconActiveClass: string;
 }[] = [
   { id: "youtube", title: "YouTube", icon: MonitorPlay, iconActiveClass: "text-[#FF0000]" },
-  { id: "douyin", title: "抖音 Douyin", icon: Music, iconActiveClass: "text-[#25F4EE]" },
   { id: "tiktok", title: "TikTok", icon: Music2, iconActiveClass: "text-[#69C9D0]" },
+  { id: "facebook", title: "Facebook", icon: Globe, iconActiveClass: "text-[#1877F2]" },
 ];
 
 const BGM_DEFAULT = "__bgm_default__";

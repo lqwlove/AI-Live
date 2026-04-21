@@ -12,8 +12,8 @@ interface Props {
 
 const TABS: { key: Platform; label: string }[] = [
   { key: "youtube", label: "YouTube" },
-  { key: "douyin", label: "Douyin" },
   { key: "tiktok", label: "TikTok" },
+  { key: "facebook", label: "Facebook" },
 ];
 
 export function PlatformConfig({ config, onChange }: Props) {
@@ -90,13 +90,6 @@ function PlatformTabBody({
           <ToggleField label="自动回复聊天" checked={section.auto_reply as boolean} onChange={(v) => set("auto_reply", v)} />
         </>
       )}
-      {tab === "douyin" && (
-        <>
-          <ConfigField label="房间 ID" value={section.room_id as string} onChange={(v) => set("room_id", v)} />
-          <ConfigField label="直播链接" value={section.live_url as string} onChange={(v) => set("live_url", v)} />
-          <ConfigField label="Cookie" value={section.cookie as string} onChange={(v) => set("cookie", v)} />
-        </>
-      )}
       {tab === "tiktok" && (
         <>
           <ConfigField label="用户名（不带 @）" value={section.unique_id as string} onChange={(v) => set("unique_id", v)} />
@@ -106,6 +99,28 @@ function PlatformTabBody({
             onChange={(v) => set("proxy", v)}
             placeholder="http://127.0.0.1:7890"
           />
+        </>
+      )}
+      {tab === "facebook" && (
+        <>
+          <ConfigField label="页面 ID（Page ID）" value={section.page_id as string} onChange={(v) => set("page_id", v)} />
+          <ConfigField label="直播视频 ID（Live Video ID）" value={section.live_video_id as string} onChange={(v) => set("live_video_id", v)} />
+          <p className="text-[11px] leading-relaxed text-[var(--font-muted)]">
+            填写 Page ID 可自动查找当前正在直播的视频；也可直接填写 Live Video ID。
+          </p>
+          <ConfigField label="Access Token" value={section.access_token as string} onChange={(v) => set("access_token", v)} />
+          <ConfigField label="App ID" value={section.app_id as string} onChange={(v) => set("app_id", v)} />
+          <ConfigField label="App Secret" value={section.app_secret as string} onChange={(v) => set("app_secret", v)} />
+          <p className="text-[11px] leading-relaxed text-[var(--font-muted)]">
+            提供 App ID 和 App Secret 后，系统会自动将短期 Token 交换为长期 Token（60 天有效），并获取永不过期的 Page Token。
+          </p>
+          <ConfigField
+            label="代理"
+            value={section.proxy as string}
+            onChange={(v) => set("proxy", v)}
+            placeholder="http://127.0.0.1:7890"
+          />
+          <ToggleField label="自动回复评论" checked={section.auto_reply as boolean} onChange={(v) => set("auto_reply", v)} />
         </>
       )}
     </div>

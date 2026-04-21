@@ -11,8 +11,8 @@ function avatarColor(index: number) {
 
 function platformBadgeLabel(platform: string | null) {
   if (platform === "youtube") return "YouTube";
-  if (platform === "douyin") return "Douyin";
   if (platform === "tiktok") return "TikTok";
+  if (platform === "facebook") return "Facebook";
   return "直播中";
 }
 

@@ -23,8 +23,8 @@ const NAV_ITEMS: {
 
 const PLATFORMS: { id: Platform; label: string }[] = [
   { id: "youtube", label: "YouTube" },
-  { id: "douyin", label: "Douyin" },
   { id: "tiktok", label: "TikTok" },
+  { id: "facebook", label: "Facebook" },
 ];
 
 export function Sidebar() {

@@ -5,11 +5,11 @@ import yaml
 from utils.paths import get_data_path
 
 DEFAULT_CONFIG = {
-    "douyin": {
-        "live_url": "",
-        "room_id": "",
-        "cookie": "",
-    },
+    # "douyin": {
+    #     "live_url": "",
+    #     "room_id": "",
+    #     "cookie": "",
+    # },
     "tiktok": {
         "unique_id": "",
         "proxy": "",
@@ -22,6 +22,16 @@ DEFAULT_CONFIG = {
         "auto_reply": False,
         "reply_prefix": "",
         "chat_warmup_seconds": 2.0,
+    },
+    "facebook": {
+        "page_id": "",
+        "live_video_id": "",
+        "access_token": "",
+        "app_id": "",
+        "app_secret": "",
+        "auto_reply": False,
+        "reply_prefix": "",
+        "proxy": "",
     },
     "ai": {
         "model": "gpt-4o-mini",
@@ -225,10 +235,15 @@ class Config:
                 "configured": bool(self.get("tiktok", "unique_id")),
                 "platform": platform,
             }
-        if platform == "douyin":
-            dy = self.get("douyin")
-            return {
-                "configured": bool(dy.get("room_id") or dy.get("live_url")),
-                "platform": platform,
-            }
+        if platform == "facebook":
+            fb = self.get("facebook")
+            has_id = bool(fb.get("live_video_id") or fb.get("page_id"))
+            has_token = bool(fb.get("access_token"))
+            return {"configured": has_id and has_token, "platform": platform}
+        # if platform == "douyin":
+        #     dy = self.get("douyin")
+        #     return {
+        #         "configured": bool(dy.get("room_id") or dy.get("live_url")),
+        #         "platform": platform,
+        #     }
         return {"configured": False, "platform": platform}

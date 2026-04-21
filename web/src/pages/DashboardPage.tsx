@@ -7,8 +7,8 @@ import { AnnounceControlBar } from "@/components/dashboard/AnnounceControlBar";
 
 function platformLabel(id: string | null) {
   if (id === "youtube") return "YouTube";
-  if (id === "douyin") return "Douyin";
   if (id === "tiktok") return "TikTok";
+  if (id === "facebook") return "Facebook";
   return "";
 }
 

@@ -36,6 +36,7 @@ def _safe_user(event) -> dict:
             "id": str(getattr(raw, "id", "") or ""),
             "nickname": (
                 getattr(raw, "nickname", "")
+                or getattr(raw, "nick_name", "")
                 or getattr(raw, "nickName", "")
                 or getattr(raw, "unique_id", "")
                 or getattr(raw, "uniqueId", "")
@@ -148,7 +149,7 @@ class TikTokDanmakuClient:
                 await asyncio.sleep(wait)
 
     def _make_key(self, event_type: str, event) -> str:
-        uid = _safe_user(event)["id"] if hasattr(event, "user") or hasattr(event, "user_info") else ""
+        uid = _safe_user(event).get("id", "")
         msg_id = getattr(event, "msg_id", "") or getattr(event, "message_id", "")
         if msg_id:
             return f"{event_type}:{msg_id}"

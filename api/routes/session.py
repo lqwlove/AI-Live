@@ -12,8 +12,12 @@ class StartRequest(BaseModel):
     video_id: str = ""
     channel_id: str = ""
     unique_id: str = ""
+    # room_id / live_url: Douyin（已停用）
     room_id: str = ""
     live_url: str = ""
+    # Facebook
+    page_id: str = ""
+    live_video_id: str = ""
     # 背景音乐：仅文件名（置于 bgm 目录）。省略或 null = 按配置；"" = 本场不自动播放
     bgm_file: str | None = None
 

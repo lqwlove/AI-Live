@@ -37,4 +37,4 @@ export interface WSEvent {
   timestamp: number;
 }
 
-export type Platform = "youtube" | "douyin" | "tiktok";
+export type Platform = "youtube" | "tiktok" | "facebook";

@@ -128,20 +128,45 @@ class LiveEngine:
                 raise ConfigError("TikTok 需要 unique_id")
             proxy = self.config.get("tiktok", "proxy")
             self.danmaku = TikTokDanmakuClient(unique_id, proxy=proxy)
-        else:
-            from danmaku.client import DouyinDanmakuClient
+        elif platform == "facebook":
+            from danmaku.facebook_client import FacebookDanmakuClient
 
-            dy_cfg = self.config.get("douyin")
-            room_id = (
-                kwargs.get("room_id")
-                or kwargs.get("live_url")
-                or dy_cfg.get("room_id")
-                or dy_cfg.get("live_url")
+            fb_cfg = self.config.get("facebook")
+            page_id = kwargs.get("page_id") or fb_cfg.get("page_id", "")
+            live_video_id = kwargs.get("live_video_id") or fb_cfg.get("live_video_id", "")
+            access_token = fb_cfg.get("access_token", "")
+            if not live_video_id and not page_id:
+                raise ConfigError("Facebook 需要 page_id 或 live_video_id")
+            if not access_token:
+                raise ConfigError("Facebook 需要 access_token")
+            self.danmaku = FacebookDanmakuClient(
+                page_id=page_id,
+                live_video_id=live_video_id,
+                access_token=access_token,
+                app_id=fb_cfg.get("app_id", ""),
+                app_secret=fb_cfg.get("app_secret", ""),
+                auto_reply=fb_cfg.get("auto_reply", False),
+                reply_prefix=fb_cfg.get("reply_prefix", ""),
+                proxy=fb_cfg.get("proxy", ""),
             )
-            if not room_id:
-                raise ConfigError("抖音需要 room_id 或 live_url")
-            cookie = self.config.get("douyin", "cookie")
-            self.danmaku = DouyinDanmakuClient(room_id, cookie=cookie)
+            self._auto_reply_chat = fb_cfg.get("auto_reply", False)
+            self._reply_prefix = fb_cfg.get("reply_prefix", "")
+        else:
+            raise ConfigError(f"不支持的平台: {platform}")
+            # --- Douyin (已停用) ---
+            # from danmaku.client import DouyinDanmakuClient
+            #
+            # dy_cfg = self.config.get("douyin")
+            # room_id = (
+            #     kwargs.get("room_id")
+            #     or kwargs.get("live_url")
+            #     or dy_cfg.get("room_id")
+            #     or dy_cfg.get("live_url")
+            # )
+            # if not room_id:
+            #     raise ConfigError("抖音需要 room_id 或 live_url")
+            # cookie = self.config.get("douyin", "cookie")
+            # self.danmaku = DouyinDanmakuClient(room_id, cookie=cookie)
 
         # --- Knowledge base ---
         knowledge_cfg = self.config.get("knowledge")

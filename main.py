@@ -1,16 +1,16 @@
 """
-直播 AI 语音助手（支持抖音 + TikTok + YouTube）
+直播 AI 语音助手（支持 TikTok + YouTube + Facebook）
 - 定时批量收集弹幕，AI 挑重点统一回复
 - TTS 语音合成并播放
-- YouTube 直播间自动回复消息
+- YouTube / Facebook 直播间自动回复消息
 - 支持 LangChain Agent + 商品知识库
 
 用法:
-  python main.py --mock                              # 模拟模式
-  python main.py --room 123456789                    # 抖音直播间
-  python main.py --platform tiktok --user username   # TikTok 直播间
-  python main.py --platform youtube --video VIDEO_ID # YouTube 直播间
-  python main.py --init-config                       # 生成配置模板
+  python main.py --mock                                        # 模拟模式
+  python main.py --platform tiktok --user username             # TikTok 直播间
+  python main.py --platform youtube --video VIDEO_ID           # YouTube 直播间
+  python main.py --platform facebook --page PAGE_ID            # Facebook 直播间
+  python main.py --init-config                                 # 生成配置模板
 """
 
 import argparse
@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 os.environ.setdefault("GRPC_ENABLE_FORK_SUPPORT", "0")
 
 from config import Config
-from danmaku.client import DouyinDanmakuClient, MockDanmakuClient
+from danmaku.client import MockDanmakuClient
 from tts.speaker import TTSSpeaker
 from utils.audio_player import AudioPlayer
 from utils.message_queue import ChatTask, CommentBuffer, MessageFilter
@@ -45,13 +45,13 @@ class LiveAssistant:
     def __init__(
         self,
         config: Config,
-        platform: str = "douyin",
+        platform: str = "youtube",
         mock_mode: bool = False,
-        room_id: str = "",
-        live_url: str = "",
         tiktok_user: str = "",
         youtube_video: str = "",
         youtube_channel: str = "",
+        facebook_page: str = "",
+        facebook_video: str = "",
     ):
         self.config = config
         self.mock_mode = mock_mode
@@ -100,13 +100,34 @@ class LiveAssistant:
                 sys.exit(1)
             proxy = config.get("tiktok", "proxy")
             self.danmaku = TikTokDanmakuClient(unique_id, proxy=proxy)
-        else:
-            url_or_id = live_url or room_id or config.get("douyin", "room_id")
-            if not url_or_id:
-                logger.error("请提供直播间链接或 room_id")
+        elif platform == "facebook":
+            from danmaku.facebook_client import FacebookDanmakuClient
+
+            fb_cfg = config.get("facebook")
+            page_id = facebook_page or fb_cfg.get("page_id", "")
+            live_video_id = facebook_video or fb_cfg.get("live_video_id", "")
+            access_token = fb_cfg.get("access_token", "")
+            if not live_video_id and not page_id:
+                logger.error("请提供 Facebook Page ID (--page) 或在配置中设置 live_video_id")
                 sys.exit(1)
-            cookie = config.get("douyin", "cookie")
-            self.danmaku = DouyinDanmakuClient(url_or_id, cookie=cookie)
+            if not access_token:
+                logger.error("请在 config.yaml 的 facebook 段中配置 access_token")
+                sys.exit(1)
+            self.danmaku = FacebookDanmakuClient(
+                page_id=page_id,
+                live_video_id=live_video_id,
+                access_token=access_token,
+                app_id=fb_cfg.get("app_id", ""),
+                app_secret=fb_cfg.get("app_secret", ""),
+                auto_reply=fb_cfg.get("auto_reply", False),
+                reply_prefix=fb_cfg.get("reply_prefix", ""),
+                proxy=fb_cfg.get("proxy", ""),
+            )
+            self._auto_reply_chat = fb_cfg.get("auto_reply", False)
+            self._reply_prefix = fb_cfg.get("reply_prefix", "")
+        else:
+            logger.error(f"不支持的平台: {platform}")
+            sys.exit(1)
 
         # --- Knowledge base ---
         self.product_store = None
@@ -323,8 +344,10 @@ class LiveAssistant:
                 logger.info("已启用自动回复 - AI 回复将发送到直播间聊天")
         elif self.platform == "tiktok":
             logger.info("正在连接 TikTok 直播间...")
-        else:
-            logger.info("正在连接抖音直播间...")
+        elif self.platform == "facebook":
+            logger.info("正在连接 Facebook 直播间...")
+            if self._auto_reply_chat:
+                logger.info("已启用自动回复 - AI 回复将发送到直播间评论")
         logger.info(f"批量回复间隔: {self._batch_interval}s")
         logger.info("=" * 50)
 
@@ -344,22 +367,22 @@ class LiveAssistant:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="直播 AI 语音助手（抖音 / TikTok / YouTube）"
+        description="直播 AI 语音助手（TikTok / YouTube / Facebook）"
     )
     parser.add_argument(
         "--platform",
         type=str,
-        default="douyin",
-        choices=["douyin", "tiktok", "youtube"],
-        help="平台: douyin / tiktok / youtube",
+        default="youtube",
+        choices=["tiktok", "youtube", "facebook"],
+        help="平台: tiktok / youtube / facebook",
     )
-    parser.add_argument("--room", type=str, default="", help="抖音直播间 room_id")
-    parser.add_argument("--url", type=str, default="", help="抖音直播间链接")
     parser.add_argument(
         "--user", type=str, default="", help="TikTok 用户名 (如 @username)"
     )
     parser.add_argument("--video", type=str, default="", help="YouTube 视频 ID")
     parser.add_argument("--channel", type=str, default="", help="YouTube 频道 ID")
+    parser.add_argument("--page", type=str, default="", help="Facebook 页面 ID")
+    parser.add_argument("--fb-video", type=str, default="", help="Facebook 直播视频 ID")
     parser.add_argument("--mock", action="store_true", help="使用模拟弹幕测试模式")
     parser.add_argument(
         "--config", type=str, default="config.yaml", help="配置文件路径"
@@ -390,20 +413,26 @@ def main():
             if not args.user and not config.get("tiktok", "unique_id"):
                 logger.info("未指定 TikTok 用户名，自动进入模拟测试模式")
                 mock_mode = True
-        else:
-            if not args.room and not args.url and not config.get("douyin", "room_id"):
-                logger.info("未指定直播间，自动进入模拟测试模式")
+        elif platform == "facebook":
+            fb_cfg = config.get("facebook")
+            if (
+                not args.page
+                and not args.fb_video
+                and not fb_cfg.get("page_id")
+                and not fb_cfg.get("live_video_id")
+            ):
+                logger.info("未指定 Facebook 页面或直播视频，自动进入模拟测试模式")
                 mock_mode = True
 
     assistant = LiveAssistant(
         config=config,
         platform=platform,
         mock_mode=mock_mode,
-        room_id=args.room,
-        live_url=args.url,
         tiktok_user=args.user,
         youtube_video=args.video,
         youtube_channel=args.channel,
+        facebook_page=args.page,
+        facebook_video=args.fb_video,
     )
 
     try:
