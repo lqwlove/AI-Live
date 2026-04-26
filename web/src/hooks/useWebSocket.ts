@@ -69,12 +69,13 @@ export function useWebSocket() {
 
       switch (type) {
         case "session_started":
+          store.reset();
           store.setStatus("running");
           store.setPlatform(data.platform as string);
           break;
 
         case "session_stopped":
-          store.reset();
+          store.setStatus("idle");
           break;
 
         case "chat_received": {
@@ -115,6 +116,19 @@ export function useWebSocket() {
 
         case "audio_done":
           store.updateAIResponseStatus(data.user as string, "done");
+          break;
+
+        case "announce_start":
+          store.setAnnounceCurrent({
+            id: String(data.id ?? ""),
+            title: String(data.title ?? ""),
+            text: String(data.text ?? ""),
+            source: String(data.source ?? ""),
+          });
+          break;
+
+        case "announce_done":
+          store.setAnnounceCurrent(null);
           break;
 
         case "stats_update":

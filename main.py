@@ -36,6 +36,7 @@ logging.basicConfig(
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.WARNING)
+logging.getLogger("tts.volcengine_speaker").setLevel(logging.DEBUG)
 logger = logging.getLogger("main")
 
 
@@ -108,7 +109,9 @@ class LiveAssistant:
             live_video_id = facebook_video or fb_cfg.get("live_video_id", "")
             access_token = fb_cfg.get("access_token", "")
             if not live_video_id and not page_id:
-                logger.error("请提供 Facebook Page ID (--page) 或在配置中设置 live_video_id")
+                logger.error(
+                    "请提供 Facebook Page ID (--page) 或在配置中设置 live_video_id"
+                )
                 sys.exit(1)
             if not access_token:
                 logger.error("请在 config.yaml 的 facebook 段中配置 access_token")
@@ -231,7 +234,11 @@ class LiveAssistant:
         else:
             logger.info(
                 f"⏭️ 跳过 [{user}]: {content}"
-                + ("（未匹配触发词或长度/冷却）" if require_keywords else "（长度或冷却限制）")
+                + (
+                    "（未匹配触发词或长度/冷却）"
+                    if require_keywords
+                    else "（长度或冷却限制）"
+                )
             )
 
     def _on_like(self, data: dict):

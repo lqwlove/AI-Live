@@ -17,10 +17,12 @@ _DEFAULT_AI_API_KEY = "79c610a0-5e8e-4974-a6f0-0d7828092af4"
 _DEFAULT_AI_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 
 # ---- 火山引擎语音合成（与控制台「语音合成」一致）----
+# cjk-zb: appid: 1918430576 access_token:  j_sj8RmyeK67Jkn5I9XynxoF9W4sIuHZ
+# default: appid: 5572257127  access_token:  TsJInWhygiJjbzuSyQsgdbBV7hCFIlXt
 _DEFAULT_VOLCENGINE: dict[str, str] = {
-    "api_key": "",
-    "app_id": "1918430576",
-    "access_token": "j_sj8RmyeK67Jkn5I9XynxoF9W4sIuHZ",
+    "api_key": "4ae37c51-5e86-499f-816d-44e26b9833bd",  # 新版控制台 API Key
+    "app_id": "",  # 旧版不再使用
+    "access_token": "",  # 旧版不再使用
     "speaker_id": "zh_female_vv_uranus_bigtts",
     "resource_id": "seed-tts-2.0",
 }

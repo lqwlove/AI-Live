@@ -156,9 +156,11 @@ class YouTubeDanmakuClient:
         return None
 
     def _chat_id_from_video(self, video_id: str) -> str | None:
-        resp = self._youtube.videos().list(
-            part="liveStreamingDetails,snippet", id=video_id
-        ).execute()
+        resp = (
+            self._youtube.videos()
+            .list(part="liveStreamingDetails,snippet", id=video_id)
+            .execute()
+        )
         items = resp.get("items", [])
         if not items:
             logger.error(f"找不到视频: {video_id}")
@@ -174,13 +176,17 @@ class YouTubeDanmakuClient:
         return chat_id
 
     def _chat_id_from_channel(self, channel_id: str) -> str | None:
-        resp = self._youtube.search().list(
-            part="id",
-            channelId=channel_id,
-            type="video",
-            eventType="live",
-            maxResults=1,
-        ).execute()
+        resp = (
+            self._youtube.search()
+            .list(
+                part="id",
+                channelId=channel_id,
+                type="video",
+                eventType="live",
+                maxResults=1,
+            )
+            .execute()
+        )
         items = resp.get("items", [])
         if not items:
             logger.error(f"频道 {channel_id} 当前没有正在进行的直播")
@@ -191,14 +197,18 @@ class YouTubeDanmakuClient:
 
     def _chat_id_from_own_broadcast(self) -> str | None:
         """从自己的频道获取当前直播（仅 OAuth2 模式）"""
-        resp = self._youtube.liveBroadcasts().list(
-            part="snippet", broadcastStatus="active", broadcastType="all"
-        ).execute()
+        resp = (
+            self._youtube.liveBroadcasts()
+            .list(part="snippet", broadcastStatus="active", broadcastType="all")
+            .execute()
+        )
         items = resp.get("items", [])
         if not items:
-            resp = self._youtube.liveBroadcasts().list(
-                part="snippet", broadcastStatus="upcoming", broadcastType="all"
-            ).execute()
+            resp = (
+                self._youtube.liveBroadcasts()
+                .list(part="snippet", broadcastStatus="upcoming", broadcastType="all")
+                .execute()
+            )
             items = resp.get("items", [])
         if not items:
             logger.error("找不到自己频道的直播")
@@ -271,7 +281,9 @@ class YouTubeDanmakuClient:
                 metadata = self._build_grpc_metadata()
 
                 with grpc.secure_channel(GRPC_TARGET, ssl_creds) as channel:
-                    stub = stream_list_pb2_grpc.V3DataLiveChatMessageServiceStub(channel)
+                    stub = stream_list_pb2_grpc.V3DataLiveChatMessageServiceStub(
+                        channel
+                    )
                     response_stream = self._create_grpc_stream(stub, metadata)
 
                     if first_connect:
@@ -311,7 +323,9 @@ class YouTubeDanmakuClient:
                             self._seen_msg_ids = keep
 
                         if response.offline_at:
-                            logger.info(f"直播已结束 (offline_at: {response.offline_at})")
+                            logger.info(
+                                f"直播已结束 (offline_at: {response.offline_at})"
+                            )
                             self._running = False
                             break
 
@@ -334,7 +348,9 @@ class YouTubeDanmakuClient:
                 elif code == grpc.StatusCode.RESOURCE_EXHAUSTED:
                     error_count += 1
                     wait = min(error_count * 5, 30)
-                    logger.warning(f"请求过于频繁，{wait}s 后重试 ({error_count}/{max_errors})")
+                    logger.warning(
+                        f"请求过于频繁，{wait}s 后重试 ({error_count}/{max_errors})"
+                    )
                     time.sleep(wait)
                 elif code == grpc.StatusCode.UNAUTHENTICATED:
                     if self._readonly:
@@ -346,13 +362,17 @@ class YouTubeDanmakuClient:
                 else:
                     error_count += 1
                     wait = min(error_count * 3, 30)
-                    logger.warning(f"gRPC 错误 [{code}]: {detail}，{wait}s 后重连 ({error_count}/{max_errors})")
+                    logger.warning(
+                        f"gRPC 错误 [{code}]: {detail}，{wait}s 后重连 ({error_count}/{max_errors})"
+                    )
                     time.sleep(wait)
 
             except Exception as e:
                 error_count += 1
                 wait = min(error_count * 3, 30)
-                logger.error(f"流式接收异常: {e}，{wait}s 后重连 ({error_count}/{max_errors})")
+                logger.error(
+                    f"流式接收异常: {e}，{wait}s 后重连 ({error_count}/{max_errors})"
+                )
                 time.sleep(wait)
 
         if error_count >= max_errors:
@@ -490,10 +510,10 @@ class YouTubeDanmakuClient:
         )
 
         mode = "只读" if self._readonly else "读写"
-        logger.info(f"开始 gRPC 流式监听 YouTube 直播聊天 [{mode}模式] (chat_id: {self._live_chat_id})")
-        await asyncio.get_event_loop().run_in_executor(
-            None, self._stream_messages_sync
+        logger.info(
+            f"开始 gRPC 流式监听 YouTube 直播聊天 [{mode}模式] (chat_id: {self._live_chat_id})"
         )
+        await asyncio.get_event_loop().run_in_executor(None, self._stream_messages_sync)
 
     def stop(self):
         self._running = False

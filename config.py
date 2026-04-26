@@ -48,7 +48,7 @@ DEFAULT_CONFIG = {
         ),
         "max_history": 10,
         "multilang": False,
-        "batch_interval": 5,
+        "batch_interval": 2,
         "translate_display": True,
         "free_reply": False,
     },
@@ -63,6 +63,8 @@ DEFAULT_CONFIG = {
         "rate": "+0%",
         "volume": "+0%",
         "output_dir": "audio_cache",
+        # 火山引擎音色 ID，非空时优先级高于 internal_credentials 里的 speaker_id
+        "speaker_id": "",
     },
     "filter": {
         "keywords": [
@@ -196,7 +198,9 @@ class Config:
         payload.pop("volcengine", None)
         if "ai" in payload and isinstance(payload["ai"], dict):
             payload["ai"] = {
-                k: v for k, v in payload["ai"].items() if k not in ("api_key", "base_url")
+                k: v
+                for k, v in payload["ai"].items()
+                if k not in ("api_key", "base_url")
             }
         self._deep_merge(self._data, payload, skip_masked_secrets=True)
         self._apply_internal_credentials()
@@ -207,7 +211,9 @@ class Config:
         to_write = copy.deepcopy(self._data)
         if "ai" in to_write and isinstance(to_write["ai"], dict):
             to_write["ai"] = {
-                k: v for k, v in to_write["ai"].items() if k not in ("api_key", "base_url")
+                k: v
+                for k, v in to_write["ai"].items()
+                if k not in ("api_key", "base_url")
             }
         to_write.pop("volcengine", None)
         return to_write
@@ -220,7 +226,12 @@ class Config:
 
     def save_template(self, path="config.yaml"):
         with open(path, "w", encoding="utf-8") as f:
-            yaml.dump(self._persistable_config_copy(), f, allow_unicode=True, default_flow_style=False)
+            yaml.dump(
+                self._persistable_config_copy(),
+                f,
+                allow_unicode=True,
+                default_flow_style=False,
+            )
         print(f"配置模板已保存到 {path}")
 
     def validate_platform(self, platform: str) -> dict:

@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
 import { Volume2 } from "lucide-react";
+import { api } from "@/lib/api";
+import type { VolcengineVoice } from "@/lib/api";
 
 interface Props {
   config: Record<string, unknown>;
@@ -9,6 +12,14 @@ export function TTSConfig({ config, onChange }: Props) {
   const tts = (config.tts ?? {}) as Record<string, unknown>;
   const engine = (tts.engine as string) ?? "edge-tts";
   const isVolc = engine === "volcengine";
+
+  const [voices, setVoices] = useState<VolcengineVoice[]>([]);
+
+  useEffect(() => {
+    if (isVolc) {
+      api.getVolcengineVoices().then(setVoices).catch(() => {});
+    }
+  }, [isVolc]);
 
   const setTts = (key: string, value: unknown) => onChange("tts", { [key]: value });
 
@@ -37,10 +48,39 @@ export function TTSConfig({ config, onChange }: Props) {
       </div>
 
       {isVolc ? (
-        <p className="text-[11px] leading-relaxed text-[var(--font-muted)]">
-          火山引擎的 App ID、Access Token、音色 ID 等仅在服务端 <code className="rounded bg-[var(--input-bg)] px-1">internal_credentials.py</code>{" "}
-          或对应环境变量中配置，不在此页面填写。
-        </p>
+        <>
+          {voices.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-[var(--font-secondary)]">AI 回复音色</label>
+              <select
+                className="rounded-md border border-[var(--border-app)] bg-[var(--input-bg)] px-3 py-2.5 text-[13px] text-[var(--font-primary)] outline-none focus:border-[var(--accent-purple)]"
+                value={(tts.speaker_id as string) ?? ""}
+                onChange={(e) => setTts("speaker_id", e.target.value)}
+              >
+                <option value="">默认（internal_credentials 配置）</option>
+                {voices.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}（{v.lang}，{v.resource_id}）
+                  </option>
+                ))}
+              </select>
+              {tts.speaker_id ? (
+                <p className="text-[11px] text-[var(--font-muted)]">
+                  当前 speaker_id：<code className="rounded bg-[var(--input-bg)] px-1">{tts.speaker_id as string}</code>
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-[11px] leading-relaxed text-[var(--font-muted)]">
+              加载音色中…如长时间未加载，请检查后端服务。
+            </p>
+          )}
+          <p className="text-[11px] leading-relaxed text-[var(--font-muted)]">
+            火山引擎的 API Key 等敏感配置仅在服务端{" "}
+            <code className="rounded bg-[var(--input-bg)] px-1">internal_credentials.py</code>{" "}
+            中配置，不在此填写。
+          </p>
+        </>
       ) : (
         <Field label="音色（Voice）" value={tts.voice as string} onChange={(v) => setTts("voice", v)} />
       )}

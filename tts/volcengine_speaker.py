@@ -21,6 +21,7 @@ API_URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 LANG_MAP = {
     "zh": "zh-cn",
     "en": "en",
+    "ja": "ja",
 }
 
 
@@ -48,12 +49,11 @@ class VolcengineSpeaker:
 
         if api_key:
             self._headers = {
-                "X-Api-App-Key": api_key,
-                "X-Api-Access-Key": api_key,
+                "X-Api-Key": api_key,
                 "X-Api-Resource-Id": resource_id,
                 "Content-Type": "application/json",
             }
-            logger.info("火山 TTS 使用新版控制台 API Key 认证")
+            logger.info("火山 TTS 使用新版控制台 API Key 认证（X-Api-Key）")
         elif app_id and access_token:
             self._headers = {
                 "X-Api-App-Id": app_id,
@@ -63,7 +63,9 @@ class VolcengineSpeaker:
             }
             logger.info("火山 TTS 使用旧版控制台 App ID + Access Token 认证")
         else:
-            raise ValueError("请提供 volcengine.api_key（新版控制台）或 app_id + access_token（旧版控制台）")
+            raise ValueError(
+                "请提供 volcengine.api_key（新版控制台）或 app_id + access_token（旧版控制台）"
+            )
 
     def _get_cache_path(self, text: str, lang: str) -> str:
         key = f"{self.speaker_id}:{lang}:{text}"
@@ -91,15 +93,25 @@ class VolcengineSpeaker:
                     "format": self.audio_format,
                     "sample_rate": self.sample_rate,
                 },
-                "additions": json.dumps({
-                    "explicit_language": explicit_lang,
-                }),
+                # "additions": json.dumps({
+                #     "explicit_language": explicit_lang,
+                # }),
             },
         }
 
         try:
+            logger.debug(
+                f"火山 TTS 请求: url={API_URL}, resource_id={self.resource_id}, "
+                f"speaker={self.speaker_id}, lang={lang}, text={text!r:.80}"
+            )
             resp = self._session.post(
                 API_URL, headers=self._headers, json=payload, stream=True, timeout=30
+            )
+
+            logger.debug(
+                f"火山 TTS 响应头: status={resp.status_code}, "
+                f"Content-Type={resp.headers.get('Content-Type')}, "
+                f"headers={dict(resp.headers)}"
             )
 
             if resp.status_code != 200:
@@ -112,6 +124,7 @@ class VolcengineSpeaker:
 
             audio_chunks: list[bytes] = []
             raw_samples: list[str] = []
+            line_count = 0
             for line in resp.iter_lines():
                 if not line:
                     continue
@@ -121,6 +134,8 @@ class VolcengineSpeaker:
                     line = str(line).strip()
                 if not line:
                     continue
+                line_count += 1
+                logger.debug(f"火山 TTS 原始行[{line_count}]: {line[:300]}")
                 # SSE / 部分网关会在每行前加 data:
                 if line.startswith("data:"):
                     line = line[5:].strip()
@@ -129,6 +144,9 @@ class VolcengineSpeaker:
                 try:
                     data = json.loads(line)
                 except json.JSONDecodeError:
+                    logger.warning(
+                        f"火山 TTS 行无法解析为 JSON[{line_count}]: {line[:300]}"
+                    )
                     if len(raw_samples) < 3:
                         raw_samples.append(line[:200])
                     continue
@@ -140,20 +158,42 @@ class VolcengineSpeaker:
                 except (TypeError, ValueError):
                     code_int = -1
 
+                logger.debug(
+                    f"火山 TTS JSON[{line_count}]: code={code}, "
+                    f"keys={list(data.keys())}, "
+                    f"message={data.get('message', data.get('msg', ''))!r}"
+                )
+
                 payload = data.get("data")
                 if code_int == 0 and payload:
                     if isinstance(payload, str):
                         try:
                             audio_chunks.append(base64.b64decode(payload))
+                            logger.debug(
+                                f"火山 TTS 音频分片[{line_count}]: base64 字符串, 解码后 {len(audio_chunks[-1])} 字节"
+                            )
                         except Exception:
+                            logger.warning(
+                                f"火山 TTS 音频分片[{line_count}]: base64 解码失败"
+                            )
                             if len(raw_samples) < 3:
                                 raw_samples.append(f"(bad b64) {line[:200]}")
                     elif isinstance(payload, dict) and payload.get("audio"):
                         try:
                             audio_chunks.append(base64.b64decode(payload["audio"]))
+                            logger.debug(
+                                f"火山 TTS 音频分片[{line_count}]: data.audio, 解码后 {len(audio_chunks[-1])} 字节"
+                            )
                         except Exception:
-                            pass
+                            logger.warning(
+                                f"火山 TTS 音频分片[{line_count}]: data.audio base64 解码失败"
+                            )
+                    else:
+                        logger.debug(
+                            f"火山 TTS code=0 但 data 结构未识别: type={type(payload)}, keys={list(payload.keys()) if isinstance(payload, dict) else 'N/A'}"
+                        )
                 elif code_int == 20000000:
+                    logger.debug(f"火山 TTS 收到结束帧 code=20000000")
                     break
                 elif code_int not in (0, 20000000):
                     msg = data.get("message", data.get("msg", ""))
@@ -162,6 +202,10 @@ class VolcengineSpeaker:
                         return ""
                     if len(raw_samples) < 3:
                         raw_samples.append(line[:300])
+
+            logger.debug(
+                f"火山 TTS 流结束: 共 {line_count} 行, {len(audio_chunks)} 个音频分片"
+            )
 
             if not audio_chunks:
                 hint = (
@@ -174,7 +218,9 @@ class VolcengineSpeaker:
                         f"{hint} 原始行片段: {raw_samples!r}"
                     )
                 else:
-                    logger.error("火山 TTS 未返回音频数据（响应体可能为空或非预期格式）。" + hint)
+                    logger.error(
+                        "火山 TTS 未返回音频数据（响应体可能为空或非预期格式）。" + hint
+                    )
                 return ""
 
             with open(cache_path, "wb") as f:

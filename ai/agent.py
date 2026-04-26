@@ -78,7 +78,7 @@ class LiveAgent:
                 api_key=api_key,
                 base_url=base_url,
                 model=model,
-                max_tokens=250,
+                max_tokens=2048,
                 temperature=0.8,
             )
             if self.tools:
@@ -107,7 +107,11 @@ class LiveAgent:
             messages.append(response)
 
             if not response.tool_calls:
-                logger.info(f"[Agent] 第{round_i+1}轮: LLM 直接回复，无工具调用")
+                logger.info(
+                    f"[Agent] 第{round_i+1}轮: LLM 直接回复，无工具调用 | "
+                    f"content={response.content!r:.200} | "
+                    f"response_metadata={response.response_metadata}"
+                )
                 break
 
             from langchain_core.messages import ToolMessage
@@ -128,9 +132,17 @@ class LiveAgent:
             messages.append(response)
 
         raw = response.content or ""
+        stripped = raw.strip()
+        if not stripped:
+            logger.warning(
+                f"[Agent] LLM 返回空内容！"
+                f"content={raw!r}, "
+                f"finish_reason={response.response_metadata.get('finish_reason')}, "
+                f"usage={response.response_metadata.get('token_usage') or response.response_metadata.get('usage')}"
+            )
         self._history.append(HumanMessage(content=user_message))
         self._history.append(AIMessage(content=raw))
-        return raw.strip()
+        return stripped
 
     def batch_reply(self, comments: list[dict]) -> tuple[str, str]:
         """

@@ -30,8 +30,32 @@ export interface AnnounceItem {
   enabled: boolean;
 }
 
+export interface AnnounceCurrent {
+  id: string;
+  title: string;
+  text: string;
+  source: "auto" | "manual" | string;
+}
+
+export interface AnnounceRuntime {
+  enabled: boolean;
+  active_ids: string[];
+  current: AnnounceCurrent | null;
+  interval_seconds: number;
+  voice_volume: number;
+}
+
+export interface VolcengineVoice {
+  id: string;
+  name: string;
+  lang: string;
+  resource_id: string;
+}
+
 export const api = {
   getConfig: () => request<Record<string, unknown>>("/api/config"),
+
+  getVolcengineVoices: () => request<VolcengineVoice[]>("/api/config/volcengine-voices"),
 
   updateConfig: (data: Record<string, unknown>) =>
     request<{ ok: boolean }>("/api/config", {
@@ -124,13 +148,7 @@ export const api = {
       body: JSON.stringify({ items }),
     }),
 
-  getAnnounceRuntime: () =>
-    request<{
-      enabled: boolean;
-      active_ids: string[];
-      interval_seconds: number;
-      voice_volume: number;
-    }>("/api/announce/runtime"),
+  getAnnounceRuntime: () => request<AnnounceRuntime>("/api/announce/runtime"),
 
   putAnnounceRuntime: (body: {
     enabled?: boolean;
@@ -138,13 +156,17 @@ export const api = {
     interval_seconds?: number;
     voice_volume?: number;
   }) =>
-    request<{
-      enabled: boolean;
-      active_ids: string[];
-      interval_seconds: number;
-      voice_volume: number;
-    }>("/api/announce/runtime", {
+    request<AnnounceRuntime>("/api/announce/runtime", {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+
+  playAnnouncement: (id: string) =>
+    request<AnnounceRuntime>("/api/announce/play", {
+      method: "POST",
+      body: JSON.stringify({ id }),
+    }),
+
+  stopAnnouncement: () =>
+    request<AnnounceRuntime>("/api/announce/stop", { method: "POST" }),
 };

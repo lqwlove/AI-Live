@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 MULTILANG_SUFFIX = (
     "\n\n【输出规则】"
     "先判断观众消息的语言，在回复最前面标注语言标签后紧跟回复内容。"
-    "格式：[zh]中文回复 或 [en]English reply。"
+    "格式：[zh]中文回复、[en]English reply 或 [ja]日本語の返信。"
     "用观众使用的语言进行回复。只输出一种语言，不要混合。"
 )
 

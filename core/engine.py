@@ -71,6 +71,7 @@ class LiveEngine:
         self._danmaku_task: asyncio.Task | None = None
         self._process_task: asyncio.Task | None = None
         self._announce_task: asyncio.Task | None = None
+        self._manual_announce_task: asyncio.Task | None = None
         self._bgm_skip_autostart = False
         self._bgm_start_basename: str | None = None
 
@@ -80,7 +81,9 @@ class LiveEngine:
         self._announce_interval = float(ann_cfg.get("interval_seconds", 30))
         self.announce_enabled = False
         self.announce_active_ids: list[str] = []
+        self.announce_current: dict | None = None
         self.announce_hold = False
+        self._announce_play_seq = 0
         self._voice_lock: asyncio.Lock | None = None
         self._to_zh = None
         self._translation_tasks: set[asyncio.Task] = set()
@@ -133,7 +136,9 @@ class LiveEngine:
 
             fb_cfg = self.config.get("facebook")
             page_id = kwargs.get("page_id") or fb_cfg.get("page_id", "")
-            live_video_id = kwargs.get("live_video_id") or fb_cfg.get("live_video_id", "")
+            live_video_id = kwargs.get("live_video_id") or fb_cfg.get(
+                "live_video_id", ""
+            )
             access_token = fb_cfg.get("access_token", "")
             if not live_video_id and not page_id:
                 raise ConfigError("Facebook 需要 page_id 或 live_video_id")
@@ -231,14 +236,24 @@ class LiveEngine:
         )
         if self._tts_engine == "volcengine":
             from tts.volcengine_speaker import VolcengineSpeaker
+            from tts.volcengine_voices import get_voice_by_id
 
             vc_cfg = self.config.get("volcengine")
+            # tts.speaker_id 非空时优先（UI 可配置），否则回退到 internal_credentials
+            speaker_id = tts_cfg.get("speaker_id") or vc_cfg["speaker_id"]
+            voice_cfg = get_voice_by_id(speaker_id)
+            resource_id = (
+                voice_cfg.resource_id
+                if voice_cfg is not None
+                else vc_cfg.get("resource_id", "seed-tts-2.0")
+            )
+            logger.info(f"火山 TTS 音色: {speaker_id}, resource_id={resource_id}")
             self.tts = VolcengineSpeaker(
                 api_key=vc_cfg.get("api_key", ""),
                 app_id=vc_cfg.get("app_id", ""),
                 access_token=vc_cfg.get("access_token", ""),
-                speaker_id=vc_cfg["speaker_id"],
-                resource_id=vc_cfg.get("resource_id", "seed-icl-2.0"),
+                speaker_id=speaker_id,
+                resource_id=resource_id,
                 output_dir=output_dir,
             )
         else:
@@ -366,9 +381,7 @@ class LiveEngine:
             out["content"] = append_zh_in_parens(content, zh) if zh else content
             if not self.running:
                 return
-            await self.event_bus.emit(
-                Event(EventType.CHAT_RECEIVED, out, timestamp=ts)
-            )
+            await self.event_bus.emit(Event(EventType.CHAT_RECEIVED, out, timestamp=ts))
             logger.info(
                 "chat_received 已投递(括号译文=%s) msg_uid=%s 预览=%s",
                 "有" if zh else "无",
@@ -449,27 +462,140 @@ class LiveEngine:
         async with self._voice_lock:
             await loop.run_in_executor(self.executor, self._play_voice_path_sync, path)
 
-    def _resolve_announce_texts(self) -> list[str]:
+    def _resolve_announce_items(self) -> list:
         if not self.announcement_store or not self.announce_active_ids:
             return []
-        texts: list[str] = []
+        items: list = []
         for iid in self.announce_active_ids:
             item = self.announcement_store.get_by_id(iid)
             if item and item.enabled and item.text.strip():
-                texts.append(item.text.strip())
-        return texts
+                items.append(item)
+        return items
+
+    async def _begin_announcement(self, item, source: str) -> int:
+        self._announce_play_seq += 1
+        seq = self._announce_play_seq
+        current = {
+            "id": getattr(item, "id", ""),
+            "title": getattr(item, "title", ""),
+            "text": (getattr(item, "text", "") or "").strip()[:200],
+            "source": source,
+        }
+        self.announce_current = current
+        await self.event_bus.emit(Event(EventType.ANNOUNCE_START, current))
+        return seq
+
+    async def _finish_announcement(
+        self,
+        seq: int,
+        *,
+        ok: bool,
+        error: str | None = None,
+        stopped: bool = False,
+    ):
+        current = self.announce_current
+        if seq != self._announce_play_seq:
+            return
+        self.announce_current = None
+        data = {
+            "ok": ok,
+            "stopped": stopped,
+            "id": current.get("id") if current else None,
+            "title": current.get("title") if current else "",
+            "source": current.get("source") if current else "",
+        }
+        if error:
+            data["error"] = error
+        await self.event_bus.emit(Event(EventType.ANNOUNCE_DONE, data))
+
+    async def stop_announcement(self):
+        """停止当前公告播报；不改变自动播报开关。"""
+        if not self.announce_current:
+            return
+        if self._manual_announce_task and not self._manual_announce_task.done():
+            self._manual_announce_task.cancel()
+        seq = self._announce_play_seq
+        self._announce_play_seq += 1
+        if self.player:
+            self.player.stop()
+        current = self.announce_current
+        self.announce_current = None
+        if current and current.get("source") == "manual":
+            self.announce_hold = False
+        await self.event_bus.emit(
+            Event(
+                EventType.ANNOUNCE_DONE,
+                {
+                    "ok": False,
+                    "stopped": True,
+                    "id": current.get("id") if current else None,
+                    "title": current.get("title") if current else "",
+                    "source": current.get("source") if current else "",
+                    "seq": seq,
+                },
+            )
+        )
+
+    async def play_announcement_item(self, item_id: str):
+        """立即播放指定公告，抢占当前公告，且同一时间只允许一条公告出声。"""
+        if not self.announcement_store:
+            raise ValueError("未配置播报文案库")
+        item = self.announcement_store.get_by_id(item_id)
+        if not item or not item.enabled or not item.text.strip():
+            raise ValueError("播报文案不存在、未启用或为空")
+
+        if self._manual_announce_task and not self._manual_announce_task.done():
+            self._manual_announce_task.cancel()
+        await self.stop_announcement()
+
+        self.announce_hold = True
+        seq = await self._begin_announcement(item, "manual")
+        self._manual_announce_task = asyncio.create_task(
+            self._play_announcement_item(item, seq)
+        )
+
+    async def _play_announcement_item(self, item, seq: int):
+        line = (getattr(item, "text", "") or "").strip()
+        ann_lang = "zh" if is_primarily_chinese(line) else "en"
+        logger.info(f"📢 [手动播报] 合成 [{ann_lang}]: {line[:80]}...")
+        audio_path = ""
+        try:
+            if self._tts_engine == "volcengine":
+                audio_path = await self.tts.synthesize(line, lang=ann_lang)
+                if not audio_path:
+                    audio_path = await self._edge_tts_fallback.synthesize(line)
+            else:
+                audio_path = await self.tts.synthesize(line)
+
+            if not audio_path:
+                logger.warning("📢 [手动播报] TTS 失败")
+                await self._finish_announcement(seq, ok=False)
+                return
+
+            await self._play_voice_path(audio_path, preempt=False)
+            if seq == self._announce_play_seq:
+                self.stats["audio_played"] += 1
+                await self._finish_announcement(seq, ok=True)
+                await self._emit_stats()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"📢 [手动播报] 播放出错: {e}", exc_info=True)
+            await self._finish_announcement(seq, ok=False, error=str(e))
+        finally:
+            if seq == self._announce_play_seq:
+                self.announce_hold = False
 
     async def _announce_loop(self):
         logger.info("📢 自动播报循环已启动")
         idx = 0
-        ann_lang = self.config.get("announce", "lang") or "zh"
         while self.running:
             await asyncio.sleep(0.2)
             if not self.announce_enabled or not self.announcement_store:
                 await asyncio.sleep(0.8)
                 continue
-            texts = self._resolve_announce_texts()
-            if not texts:
+            items = self._resolve_announce_items()
+            if not items:
                 await asyncio.sleep(0.8)
                 continue
 
@@ -478,16 +604,15 @@ class LiveEngine:
             if not self.running:
                 break
 
-            line = texts[idx % len(texts)]
+            item = items[idx % len(items)]
             idx += 1
+            line = (getattr(item, "text", "") or "").strip()
 
-            await self.event_bus.emit(
-                Event(
-                    EventType.ANNOUNCE_START,
-                    {"text": line[:200]},
-                )
-            )
-            logger.info(f"📢 [自动播报] 合成: {line[:80]}...")
+            # 按文本内容自动判断语言，不使用全局固定语言
+            ann_lang = "zh" if is_primarily_chinese(line) else "en"
+
+            seq = await self._begin_announcement(item, "auto")
+            logger.info(f"📢 [自动播报] 合成 [{ann_lang}]: {line[:80]}...")
             audio_path = ""
             try:
                 if self._tts_engine == "volcengine":
@@ -498,15 +623,13 @@ class LiveEngine:
                     audio_path = await self.tts.synthesize(line)
             except Exception as e:
                 logger.error(f"📢 [自动播报] 合成出错: {e}", exc_info=True)
-                await self.event_bus.emit(
-                    Event(EventType.ANNOUNCE_DONE, {"ok": False, "error": str(e)})
-                )
+                await self._finish_announcement(seq, ok=False, error=str(e))
                 await asyncio.sleep(self._announce_interval)
                 continue
 
             if not audio_path:
                 logger.warning("📢 [自动播报] TTS 失败，跳过本条")
-                await self.event_bus.emit(Event(EventType.ANNOUNCE_DONE, {"ok": False}))
+                await self._finish_announcement(seq, ok=False)
                 await asyncio.sleep(self._announce_interval)
                 continue
 
@@ -514,16 +637,18 @@ class LiveEngine:
                 await asyncio.sleep(0.1)
             if not self.running:
                 break
+            if seq != self._announce_play_seq:
+                await asyncio.sleep(0.1)
+                continue
             try:
                 await self._play_voice_path(audio_path, preempt=False)
-                self.stats["audio_played"] += 1
-                await self.event_bus.emit(Event(EventType.ANNOUNCE_DONE, {"ok": True}))
-                await self._emit_stats()
+                if seq == self._announce_play_seq:
+                    self.stats["audio_played"] += 1
+                    await self._finish_announcement(seq, ok=True)
+                    await self._emit_stats()
             except Exception as e:
                 logger.error(f"📢 [自动播报] 播放出错: {e}", exc_info=True)
-                await self.event_bus.emit(
-                    Event(EventType.ANNOUNCE_DONE, {"ok": False, "error": str(e)})
-                )
+                await self._finish_announcement(seq, ok=False, error=str(e))
 
             await asyncio.sleep(self._announce_interval)
 
@@ -568,7 +693,9 @@ class LiveEngine:
                 ai_ms = int((time.time() - t0) * 1000)
 
                 if not self.running:
-                    logger.debug("会话已停止，跳过本次批量后续步骤（AI 请求可能仍在收尾）")
+                    logger.debug(
+                        "会话已停止，跳过本次批量后续步骤（AI 请求可能仍在收尾）"
+                    )
                     continue
 
                 if not reply:
@@ -603,9 +730,7 @@ class LiveEngine:
                     "reply": reply_for_ui,
                     "lang": lang,
                 }
-                await self.event_bus.emit(
-                    Event(EventType.AI_REPLY_DONE, done_payload)
-                )
+                await self.event_bus.emit(Event(EventType.AI_REPLY_DONE, done_payload))
 
                 if self._auto_reply_chat and hasattr(self.danmaku, "send_message"):
                     await loop.run_in_executor(
@@ -729,9 +854,7 @@ class LiveEngine:
                 if os.path.isfile(path):
                     self.bgm.play(path)
                 else:
-                    logger.warning(
-                        f"[BGM] 所选文件不存在: {self._bgm_start_basename}"
-                    )
+                    logger.warning(f"[BGM] 所选文件不存在: {self._bgm_start_basename}")
             else:
                 bgm_file = self.config.get("bgm").get("file", "")
                 self.bgm.play(bgm_file or None)
@@ -760,7 +883,14 @@ class LiveEngine:
             await self.event_bus.emit(Event(EventType.BGM_STOPPED, {}))
         if self.danmaku:
             self.danmaku.stop()
-        for t in (self._danmaku_task, self._process_task, self._announce_task):
+        if self.player:
+            self.player.stop()
+        for t in (
+            self._danmaku_task,
+            self._process_task,
+            self._announce_task,
+            self._manual_announce_task,
+        ):
             if t and not t.done():
                 t.cancel()
                 try:
@@ -768,6 +898,8 @@ class LiveEngine:
                 except (asyncio.CancelledError, Exception):
                     pass
         self._announce_task = None
+        self._manual_announce_task = None
+        self.announce_current = None
         if self.executor:
             try:
                 self.executor.shutdown(wait=False, cancel_futures=True)

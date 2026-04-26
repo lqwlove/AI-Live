@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Megaphone } from "lucide-react";
+import { Megaphone, Play, Square } from "lucide-react";
 import { api, type AnnounceItem } from "@/lib/api";
 import { useSessionStore } from "@/stores/sessionStore";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,8 @@ import {
 
 export function AnnounceControlBar() {
   const status = useSessionStore((s) => s.status);
+  const announceCurrent = useSessionStore((s) => s.announceCurrent);
+  const setAnnounceCurrent = useSessionStore((s) => s.setAnnounceCurrent);
   const isLive = status === "running";
 
   const [open, setOpen] = useState(false);
@@ -23,6 +25,8 @@ export function AnnounceControlBar() {
   const [intervalSec, setIntervalSec] = useState(30);
   const [voiceVol, setVoiceVol] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
 
   const loadItems = useCallback(() => {
     api.getAnnounceItems().then(setItems).catch(() => setItems([]));
@@ -34,11 +38,12 @@ export function AnnounceControlBar() {
       .then((r) => {
         setEnabled(r.enabled);
         setActiveIds(new Set(r.active_ids ?? []));
+        setAnnounceCurrent(r.current ?? null);
         setIntervalSec(Math.round(r.interval_seconds ?? 30));
         setVoiceVol(r.voice_volume ?? 1);
       })
       .catch(() => {});
-  }, []);
+  }, [setAnnounceCurrent]);
 
   useEffect(() => {
     loadItems();
@@ -63,16 +68,43 @@ export function AnnounceControlBar() {
 
   const orderedActiveIds = items.filter((i) => activeIds.has(i.id)).map((i) => i.id);
 
+  const stopCurrent = async () => {
+    if (!isLive || stopping) return;
+    setStopping(true);
+    try {
+      const r = await api.stopAnnouncement();
+      setAnnounceCurrent(r.current ?? null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setStopping(false);
+    }
+  };
+
+  const playItem = async (id: string) => {
+    if (!isLive || actionId) return;
+    setActionId(id);
+    try {
+      const r = await api.playAnnouncement(id);
+      setAnnounceCurrent(r.current ?? null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setActionId(null);
+    }
+  };
+
   const apply = async (): Promise<boolean> => {
     if (!isLive) return false;
     setSaving(true);
     try {
-      await api.putAnnounceRuntime({
+      const r = await api.putAnnounceRuntime({
         enabled,
         active_ids: orderedActiveIds,
         interval_seconds: intervalSec,
         voice_volume: voiceVol,
       });
+      setAnnounceCurrent(r.current ?? null);
       loadRuntime();
       return true;
     } catch (e) {
@@ -98,10 +130,23 @@ export function AnnounceControlBar() {
         自动播报
         {isLive && enabled ? (
           <span className="rounded bg-[var(--accent-purple)]/15 px-1.5 py-0 text-[11px] font-semibold text-[var(--accent-purple)]">
-            开
+            {announceCurrent ? "播报中" : "开"}
           </span>
         ) : null}
       </Button>
+
+      {isLive && announceCurrent ? (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={stopping}
+          onClick={() => void stopCurrent()}
+          className="box-border h-8 shrink-0 gap-1.5 rounded-md border-red-500/30 bg-red-500/10 px-3 py-0 text-[13px] font-medium text-red-500 hover:bg-red-500/15"
+        >
+          <Square className="size-3.5 shrink-0" aria-hidden />
+          {stopping ? "停止中…" : "停止播报"}
+        </Button>
+      ) : null}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
@@ -133,16 +178,42 @@ export function AnnounceControlBar() {
               开启循环播报
             </label>
 
+            {announceCurrent ? (
+              <div className="rounded-lg border border-[var(--accent-purple)]/30 bg-[var(--accent-purple)]/10 px-3 py-2">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="size-2 rounded-full bg-[var(--accent-purple)]" />
+                  <span className="text-xs font-semibold text-[var(--accent-purple)]">正在播报</span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-[var(--font-muted)]">
+                    {announceCurrent.source === "manual" ? "手动" : "自动"}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={stopping}
+                    onClick={() => void stopCurrent()}
+                    className="text-xs font-semibold text-red-500 hover:underline disabled:opacity-60"
+                  >
+                    停止
+                  </button>
+                </div>
+                <div className="truncate text-sm font-medium text-[var(--font-primary)]">
+                  {announceCurrent.title || "（无标题）"}
+                </div>
+                <div className="truncate text-xs text-[var(--font-muted)]">{announceCurrent.text}</div>
+              </div>
+            ) : null}
+
             <div className="text-xs font-medium text-[var(--font-muted)]">参与循环的文案（顺序为列表顺序）</div>
             <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border border-[var(--border-app)]/60 p-2">
               {enabledItems.length === 0 ? (
                 <p className="px-1 py-2 text-xs text-[var(--font-muted)]">请在侧栏「播报文案」中添加文案</p>
               ) : (
-                enabledItems.map((i) => (
-                  <label
-                    key={i.id}
-                    className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-0.5 hover:bg-[var(--bg-card-hover)]"
-                  >
+                enabledItems.map((i) => {
+                  const isPlaying = announceCurrent?.id === i.id;
+                  return (
+                    <div
+                      key={i.id}
+                      className="flex items-start gap-2 rounded-md px-1 py-0.5 hover:bg-[var(--bg-card-hover)]"
+                    >
                     <input
                       type="checkbox"
                       checked={activeIds.has(i.id)}
@@ -151,11 +222,29 @@ export function AnnounceControlBar() {
                       className="mt-0.5 size-4 shrink-0 rounded border-[var(--border-app)]"
                     />
                     <span className="min-w-0 text-xs text-[var(--font-primary)]">
-                      <span className="font-medium">{i.title || "（无标题）"}</span>
+                      <span className="font-medium">
+                        {i.title || "（无标题）"}
+                        {isPlaying ? (
+                          <span className="ml-1 rounded bg-[var(--accent-purple)]/15 px-1 text-[var(--accent-purple)]">
+                            正在播
+                          </span>
+                        ) : null}
+                      </span>
                       <span className="block truncate text-[var(--font-muted)]">{i.text}</span>
                     </span>
-                  </label>
-                ))
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!isLive || actionId !== null}
+                      onClick={() => void playItem(i.id)}
+                      className="ml-auto h-7 shrink-0 rounded-md border-[var(--border-app)] bg-transparent px-2 text-xs text-[var(--font-secondary)]"
+                    >
+                      <Play className="size-3" />
+                      {actionId === i.id ? "切换中…" : isPlaying ? "重播" : "播这条"}
+                    </Button>
+                    </div>
+                  );
+                })
               )}
             </div>
 

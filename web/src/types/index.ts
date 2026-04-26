@@ -22,6 +22,13 @@ export interface Stats {
   uptime: number;
 }
 
+export interface AnnounceCurrent {
+  id: string;
+  title: string;
+  text: string;
+  source: string;
+}
+
 export interface SessionStatus {
   running: boolean;
   platform: string | null;

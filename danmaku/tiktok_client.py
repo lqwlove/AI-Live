@@ -42,7 +42,9 @@ def _safe_user(event) -> dict:
                 or getattr(raw, "uniqueId", "")
                 or ""
             ),
-            "unique_id": getattr(raw, "unique_id", "") or getattr(raw, "uniqueId", "") or "",
+            "unique_id": getattr(raw, "unique_id", "")
+            or getattr(raw, "uniqueId", "")
+            or "",
         }
 
 

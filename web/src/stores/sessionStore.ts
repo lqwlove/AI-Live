@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AIResponse, ChatMessage, Stats } from "@/types";
+import type { AIResponse, AnnounceCurrent, ChatMessage, Stats } from "@/types";
 import { DEBUG_WS } from "@/lib/debugFlags";
 
 function storeLog(...args: unknown[]) {
@@ -12,12 +12,14 @@ interface SessionState {
   stats: Stats;
   chatMessages: ChatMessage[];
   aiResponses: AIResponse[];
+  announceCurrent: AnnounceCurrent | null;
 
   setStatus: (s: SessionState["status"]) => void;
   setPlatform: (p: string | null) => void;
   addChat: (msg: ChatMessage) => void;
   addAIResponse: (resp: AIResponse) => void;
   updateAIResponseStatus: (user: string, status: AIResponse["status"]) => void;
+  setAnnounceCurrent: (current: AnnounceCurrent | null) => void;
   updateStats: (s: Partial<Stats>) => void;
   reset: () => void;
 }
@@ -31,6 +33,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   stats: { ...INITIAL_STATS },
   chatMessages: [],
   aiResponses: [],
+  announceCurrent: null,
 
   setStatus: (s) => set({ status: s }),
   setPlatform: (p) => set({ platform: p }),
@@ -57,6 +60,8 @@ export const useSessionStore = create<SessionState>((set) => ({
       return { aiResponses: updated };
     }),
 
+  setAnnounceCurrent: (current) => set({ announceCurrent: current }),
+
   updateStats: (s) =>
     set((state) => ({ stats: { ...state.stats, ...s } })),
 
@@ -67,5 +72,6 @@ export const useSessionStore = create<SessionState>((set) => ({
       stats: { ...INITIAL_STATS },
       chatMessages: [],
       aiResponses: [],
+      announceCurrent: null,
     }),
 }));

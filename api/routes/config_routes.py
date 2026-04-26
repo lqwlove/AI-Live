@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+from tts.volcengine_voices import get_voices_dict
+
 router = APIRouter(prefix="/api/config")
 
 
@@ -28,3 +30,9 @@ class ValidateRequest(BaseModel):
 async def validate_platform(req: ValidateRequest, request: Request):
     config = request.app.state.config
     return config.validate_platform(req.platform)
+
+
+@router.get("/volcengine-voices")
+async def get_volcengine_voices():
+    """返回预设的火山引擎音色列表。"""
+    return get_voices_dict()

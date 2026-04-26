@@ -13,9 +13,10 @@ function platformLabel(id: string | null) {
 }
 
 export function DashboardPage() {
-  const { status, platform } = useSessionStore();
+  const { status, platform, chatMessages, aiResponses } = useSessionStore();
   const isRunning = status === "running" || status === "starting";
-
+  const hasContent = chatMessages.length > 0 || aiResponses.length > 0;
+  const showPanels = isRunning || hasContent;
 
   return (
     <div className="tk-main-canvas">
@@ -55,7 +56,7 @@ export function DashboardPage() {
         ) : null}
       </header>
 
-      {isRunning ? (
+      {showPanels ? (
         <div className="flex min-h-0 min-w-0 flex-1" style={{ gap: "var(--ds-row-gap)" }}>
           <ChatPanel />
           <AIResponsePanel />
