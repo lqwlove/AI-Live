@@ -19,6 +19,7 @@ DEFAULT_CONFIG = {
         "channel_id": "",
         "api_key": "",
         "client_secrets_file": "",
+        "proxy": "",
         "auto_reply": False,
         "reply_prefix": "",
         "chat_warmup_seconds": 2.0,

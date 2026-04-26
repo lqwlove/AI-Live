@@ -72,6 +72,12 @@ function PlatformTabBody({
           <ConfigField label="频道 ID（Channel ID）" value={section.channel_id as string} onChange={(v) => set("channel_id", v)} />
           <ConfigField label="API 密钥" value={section.api_key as string} onChange={(v) => set("api_key", v)} />
           <ConfigField
+            label="代理"
+            value={section.proxy as string}
+            onChange={(v) => set("proxy", v)}
+            placeholder="http://127.0.0.1:7890"
+          />
+          <ConfigField
             label="聊天预热（秒）"
             value={
               section.chat_warmup_seconds != null && section.chat_warmup_seconds !== ""
@@ -85,6 +91,7 @@ function PlatformTabBody({
             placeholder="2"
           />
           <p className="text-[11px] leading-relaxed text-[var(--font-muted)]">
+            Windows 使用 Clash 时，浏览器能访问不代表 Python 会自动走代理；如卡在查找直播聊天，请填 Clash 的 HTTP 代理端口。
             首次连接 gRPC 后 N 秒内不向上层派发文字聊天，用于跳过历史积压；设为 0 关闭。
           </p>
           <ToggleField label="自动回复聊天" checked={section.auto_reply as boolean} onChange={(v) => set("auto_reply", v)} />

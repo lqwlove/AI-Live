@@ -12,6 +12,7 @@ import asyncio
 import logging
 import os
 import time
+import urllib.parse
 from typing import Callable
 
 import grpc
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 SCOPES = ["https://www.googleapis.com/auth/youtube"]
 TOKEN_FILE = "youtube_token.json"
 GRPC_TARGET = "dns:///youtube.googleapis.com:443"
+REST_TIMEOUT_SECONDS = 20
 
 
 class YouTubeDanmakuClient:
@@ -40,12 +42,14 @@ class YouTubeDanmakuClient:
         channel_id: str = "",
         api_key: str = "",
         client_secrets_file: str = "",
+        proxy: str = "",
         chat_warmup_seconds: float = 0.0,
     ):
         self.video_id = video_id
         self.channel_id = channel_id
         self.api_key = api_key
         self.client_secrets_file = client_secrets_file
+        self.proxy = proxy.strip()
         self._chat_warmup_seconds = max(0.0, float(chat_warmup_seconds or 0.0))
         self._callbacks: dict[str, list[Callable]] = {}
         self._running = False
@@ -56,6 +60,7 @@ class YouTubeDanmakuClient:
         self._next_page_token: str | None = None
         self._readonly = True
         self._chat_emit_deadline: float | None = None
+        self._apply_proxy_env()
 
     @property
     def can_send(self) -> bool:
@@ -70,6 +75,42 @@ class YouTubeDanmakuClient:
                 cb(data)
             except Exception as e:
                 logger.error(f"回调处理出错 [{event}]: {e}")
+
+    def _apply_proxy_env(self):
+        """让 google API 与 gRPC 在 Windows/macOS 上都能显式走 Clash 等本地代理。"""
+        if not self.proxy:
+            return
+        for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+            os.environ[key] = self.proxy
+        # gRPC Python 会读取 grpc_proxy / https_proxy，用于 CONNECT 到 youtube.googleapis.com。
+        os.environ["grpc_proxy"] = self.proxy
+        logger.info(f"YouTube 代理已配置: {self.proxy}")
+
+    def _build_http(self):
+        try:
+            import httplib2
+
+            if not self.proxy:
+                return httplib2.Http(timeout=REST_TIMEOUT_SECONDS)
+
+            parsed = urllib.parse.urlparse(self.proxy)
+            if parsed.scheme not in ("http", "https"):
+                logger.warning("YouTube 代理仅支持 http/https: %s", self.proxy)
+                return httplib2.Http(timeout=REST_TIMEOUT_SECONDS)
+            if not parsed.hostname or not parsed.port:
+                logger.warning("YouTube 代理格式不完整，应类似 http://127.0.0.1:7890")
+                return httplib2.Http(timeout=REST_TIMEOUT_SECONDS)
+            proxy_info = httplib2.ProxyInfo(
+                proxy_type=httplib2.socks.PROXY_TYPE_HTTP,
+                proxy_host=parsed.hostname,
+                proxy_port=parsed.port,
+                proxy_user=urllib.parse.unquote(parsed.username or "") or None,
+                proxy_pass=urllib.parse.unquote(parsed.password or "") or None,
+            )
+            return httplib2.Http(proxy_info=proxy_info, timeout=REST_TIMEOUT_SECONDS)
+        except Exception as e:
+            logger.warning(f"YouTube REST 代理初始化失败，将尝试环境变量代理: {e}")
+            return None
 
     # ── 认证 ─────────────────────────────────────────────────────
 
@@ -92,7 +133,11 @@ class YouTubeDanmakuClient:
 
     def _init_api_key(self):
         """API Key 模式：只读，不需要 OAuth2"""
-        self._youtube = build("youtube", "v3", developerKey=self.api_key)
+        http = self._build_http()
+        kwargs = {"developerKey": self.api_key}
+        if http is not None:
+            kwargs["http"] = http
+        self._youtube = build("youtube", "v3", **kwargs)
         self._readonly = True
         logger.info("YouTube 认证方式: API Key（只读模式，不支持发送消息）")
 
@@ -129,7 +174,18 @@ class YouTubeDanmakuClient:
                 f.write(creds.to_json())
 
         self._credentials = creds
-        self._youtube = build("youtube", "v3", credentials=creds)
+        http = self._build_http()
+        if http is not None:
+            try:
+                import google_auth_httplib2
+
+                authed_http = google_auth_httplib2.AuthorizedHttp(creds, http=http)
+                self._youtube = build("youtube", "v3", http=authed_http)
+            except Exception as e:
+                logger.warning(f"YouTube OAuth 代理 HTTP 初始化失败，将使用默认连接: {e}")
+                self._youtube = build("youtube", "v3", credentials=creds)
+        else:
+            self._youtube = build("youtube", "v3", credentials=creds)
         self._readonly = False
         logger.info("YouTube 认证方式: OAuth2（读写模式，支持发送消息）")
 
@@ -280,6 +336,8 @@ class YouTubeDanmakuClient:
             try:
                 metadata = self._build_grpc_metadata()
 
+                if self.proxy:
+                    logger.debug("YouTube gRPC 使用代理: %s", self.proxy)
                 with grpc.secure_channel(GRPC_TARGET, ssl_creds) as channel:
                     stub = stream_list_pb2_grpc.V3DataLiveChatMessageServiceStub(
                         channel

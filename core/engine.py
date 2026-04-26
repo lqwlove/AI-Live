@@ -106,6 +106,7 @@ class LiveEngine:
             channel_id = kwargs.get("channel_id") or yt_cfg.get("channel_id", "")
             api_key = yt_cfg.get("api_key", "")
             client_secrets = yt_cfg.get("client_secrets_file", "")
+            proxy = yt_cfg.get("proxy", "")
             if not video_id and not channel_id:
                 raise ConfigError("YouTube 需要 video_id 或 channel_id")
             if not api_key and not client_secrets:
@@ -115,6 +116,7 @@ class LiveEngine:
                 channel_id=channel_id,
                 api_key=api_key,
                 client_secrets_file=client_secrets,
+                proxy=proxy,
                 chat_warmup_seconds=float(
                     yt_cfg.get("chat_warmup_seconds", 2.0) or 0.0
                 ),
